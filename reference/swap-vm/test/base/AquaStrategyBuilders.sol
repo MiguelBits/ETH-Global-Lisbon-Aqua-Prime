@@ -24,7 +24,7 @@ import { Controls } from "../../src/instructions/Controls.sol";
 
 import { MakerTraitsLib } from "../../src/libs/MakerTraits.sol";
 
-import { Program, ProgramBuilder, Opcode } from "../utils/ProgramBuilder.sol";
+import { Program, ProgramBuilder } from "../utils/ProgramBuilder.sol";
 import { dynamic } from "../utils/Dynamic.sol";
 
 import { TestConstants } from "./TestConstants.sol";
@@ -32,7 +32,7 @@ import { TestConstants } from "./TestConstants.sol";
 /**
  * @title StrategyBuilders
  * @notice Abstract contract that provides helper methods for building various swap strategies
- * @dev Inherits from Test and AquaOpcodesDebug to have access to vm and the instruction set
+ * @dev Inherits from Test and OpcodesDebug to have access to vm and _opcodes() function
  */
 abstract contract AquaStrategyBuilders is TestConstants, Test, AquaOpcodesDebug {
     using ProgramBuilder for Program;
@@ -70,13 +70,12 @@ abstract contract AquaStrategyBuilders is TestConstants, Test, AquaOpcodesDebug 
         maker = vm.addr(makerPrivateKey);
 
         // Deploy mock tokens
-        tokenA = new TokenMock("Token I", "TKI");
-        tokenB = new TokenMock("Token J", "TKJ");
-        if (tokenA > tokenB) (tokenA, tokenB) = (tokenB, tokenA);
+        tokenA = new TokenMock("Token A", "TKA");
+        tokenB = new TokenMock("Token B", "TKB");
     }
 
     function buildProgram(MakerSetup memory setup) internal view virtual returns (bytes memory) {
-        Program p;
+        Program memory p = ProgramBuilder.init(_opcodes());
 
         bytes memory concentrateProgram = "";
 
@@ -87,20 +86,20 @@ abstract contract AquaStrategyBuilders is TestConstants, Test, AquaOpcodesDebug 
             uint256 sqrtPmin = Math.sqrt(setup.priceMin * 1e18);
             uint256 sqrtPmax = Math.sqrt(setup.priceMax * 1e18);
             concentrateProgram = p.build(
-                Opcode.XYCConcentrateSwap,
+                XYCConcentrate._xycConcentrateGrowLiquidity2D,
                 XYCConcentrateArgsBuilder.build2D(sqrtPmin, sqrtPmax)
             );
         }
 
         bytes memory swapProgram = concentrateProgram.length > 0
             ? concentrateProgram
-            : p.build(Opcode.XYCSwap);
+            : p.build(XYCSwap._xycSwapXD);
 
         return bytes.concat(
-            setup.protocolFeeBps > 0 ? p.build(Opcode.AquaProtocolFeeAmountIn, FeeArgsBuilder.buildProtocolFee(setup.protocolFeeBps, setup.protocolFeeRecipient)) : bytes(""),
-            setup.feeInBps > 0 ? p.build(Opcode.FlatFeeAmountIn, FeeArgsBuilder.buildFlatFee(setup.feeInBps)) : bytes(""),
+            setup.protocolFeeBps > 0 ? p.build(Fee._aquaProtocolFeeAmountInXD, FeeArgsBuilder.buildProtocolFee(setup.protocolFeeBps, setup.protocolFeeRecipient)) : bytes(""),
+            setup.feeInBps > 0 ? p.build(Fee._flatFeeAmountInXD, FeeArgsBuilder.buildFlatFee(setup.feeInBps)) : bytes(""),
             swapProgram,
-            p.build(Opcode.Salt, abi.encodePacked(vm.randomUint()))
+            p.build(Controls._salt, abi.encodePacked(vm.randomUint()))
         );
     }
 
@@ -109,8 +108,6 @@ abstract contract AquaStrategyBuilders is TestConstants, Test, AquaOpcodesDebug 
     ) public view returns (ISwapVM.Order memory order) {
         order = MakerTraitsLib.build(MakerTraitsLib.Args({
             maker: maker,
-            tokenA: address(tokenA),
-            tokenB: address(tokenB),
             shouldUnwrapWeth: false,
             useAquaInsteadOfSignature: true,
             allowZeroAmountIn: false,

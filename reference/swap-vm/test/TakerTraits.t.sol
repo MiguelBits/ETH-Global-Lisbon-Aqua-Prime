@@ -9,6 +9,8 @@ import { TokenMock } from "@1inch/solidity-utils/contracts/mocks/TokenMock.sol";
 
 import { Aqua } from "@1inch/aqua/src/Aqua.sol";
 
+import { dynamic } from "./utils/Dynamic.sol";
+
 import { SwapVM, ISwapVM } from "../src/SwapVM.sol";
 import { SwapVMRouter } from "../src/routers/SwapVMRouter.sol";
 import { MakerTraitsLib } from "../src/libs/MakerTraits.sol";
@@ -17,7 +19,7 @@ import { OpcodesDebug } from "../src/opcodes/OpcodesDebug.sol";
 import { Balances, BalancesArgsBuilder } from "../src/instructions/Balances.sol";
 import { LimitSwap, LimitSwapArgsBuilder } from "../src/instructions/LimitSwap.sol";
 import { Controls, ControlsArgsBuilder } from "../src/instructions/Controls.sol";
-import { Program, ProgramBuilder, Opcode } from "./utils/ProgramBuilder.sol";
+import { Program, ProgramBuilder } from "./utils/ProgramBuilder.sol";
 import { MockMakerHooks } from "./mocks/MockMakerHooks.sol";
 
 /**
@@ -48,9 +50,8 @@ contract TakerTraitsTest is Test, OpcodesDebug {
 
         swapVM = new SwapVMRouter(address(0), address(0), address(this), "SwapVM", "1.0.0");
 
-        tokenA = new TokenMock("Token I", "TKI");
-        tokenB = new TokenMock("Token J", "TKJ");
-        if (tokenA > tokenB) (tokenA, tokenB) = (tokenB, tokenA);
+        tokenA = new TokenMock("Token A", "TKA");
+        tokenB = new TokenMock("Token B", "TKB");
 
         // Setup initial balances
         tokenA.mint(maker, 10000e18);
@@ -74,7 +75,7 @@ contract TakerTraitsTest is Test, OpcodesDebug {
 
         vm.prank(taker);
         (uint256 amountIn, uint256 amountOut,) = swapVM.swap(
-            order, 50e18, TakerTraitsLib.build(args)
+            order, address(tokenB), address(tokenA), 50e18, TakerTraitsLib.build(args)
         );
 
         assertEq(amountIn, 50e18);
@@ -89,7 +90,7 @@ contract TakerTraitsTest is Test, OpcodesDebug {
 
         vm.prank(taker);
         (uint256 amountIn, uint256 amountOut,) = swapVM.swap(
-            order, 50e18, TakerTraitsLib.build(args)
+            order, address(tokenB), address(tokenA), 50e18, TakerTraitsLib.build(args)
         );
 
         assertEq(amountIn, 50e18);
@@ -106,7 +107,7 @@ contract TakerTraitsTest is Test, OpcodesDebug {
 
         vm.prank(taker);
         vm.expectRevert(TakerTraitsLib.TakerTraitsDeadlineExpired.selector);
-        swapVM.swap(order, 50e18, TakerTraitsLib.build(args));
+        swapVM.swap(order, address(tokenB), address(tokenA), 50e18, TakerTraitsLib.build(args));
     }
 
     function test_Deadline_AtCurrentTimestamp_Success() public {
@@ -117,7 +118,7 @@ contract TakerTraitsTest is Test, OpcodesDebug {
 
         vm.prank(taker);
         (uint256 amountIn, uint256 amountOut,) = swapVM.swap(
-            order, 50e18, TakerTraitsLib.build(args)
+            order, address(tokenB), address(tokenA), 50e18, TakerTraitsLib.build(args)
         );
 
         assertEq(amountIn, 50e18);
@@ -134,7 +135,7 @@ contract TakerTraitsTest is Test, OpcodesDebug {
 
         vm.prank(taker);
         (, uint256 amountOut,) = swapVM.swap(
-            order, 50e18, TakerTraitsLib.build(args)
+            order, address(tokenB), address(tokenA), 50e18, TakerTraitsLib.build(args)
         );
 
         assertEq(amountOut, 25e18);
@@ -149,7 +150,7 @@ contract TakerTraitsTest is Test, OpcodesDebug {
 
         vm.prank(taker);
         vm.expectRevert(abi.encodeWithSelector(TakerTraitsLib.TakerTraitsInsufficientMinOutputAmount.selector, 25e18, 30e18));
-        swapVM.swap(order, 50e18, TakerTraitsLib.build(args));
+        swapVM.swap(order, address(tokenB), address(tokenA), 50e18, TakerTraitsLib.build(args));
     }
 
     function test_ExactOut_MaxThreshold_Success() public {
@@ -161,7 +162,7 @@ contract TakerTraitsTest is Test, OpcodesDebug {
 
         vm.prank(taker);
         (uint256 amountIn, uint256 amountOut,) = swapVM.swap(
-            order, 25e18, TakerTraitsLib.build(args)
+            order, address(tokenB), address(tokenA), 25e18, TakerTraitsLib.build(args)
         );
 
         assertEq(amountOut, 25e18);
@@ -178,7 +179,7 @@ contract TakerTraitsTest is Test, OpcodesDebug {
 
         vm.prank(taker);
         vm.expectRevert(abi.encodeWithSelector(TakerTraitsLib.TakerTraitsExceedingMaxInputAmount.selector, 50e18, 40e18));
-        swapVM.swap(order, 25e18, TakerTraitsLib.build(args));
+        swapVM.swap(order, address(tokenB), address(tokenA), 25e18, TakerTraitsLib.build(args));
     }
 
     function test_StrictThreshold_ExactMatch_Success() public {
@@ -190,7 +191,7 @@ contract TakerTraitsTest is Test, OpcodesDebug {
 
         vm.prank(taker);
         (, uint256 amountOut,) = swapVM.swap(
-            order, 50e18, TakerTraitsLib.build(args)
+            order, address(tokenB), address(tokenA), 50e18, TakerTraitsLib.build(args)
         );
 
         assertEq(amountOut, 25e18);
@@ -205,7 +206,7 @@ contract TakerTraitsTest is Test, OpcodesDebug {
 
         vm.prank(taker);
         vm.expectRevert(abi.encodeWithSelector(TakerTraitsLib.TakerTraitsNonExactThresholdAmountOut.selector, 25e18, 20e18));
-        swapVM.swap(order, 50e18, TakerTraitsLib.build(args));
+        swapVM.swap(order, address(tokenB), address(tokenA), 50e18, TakerTraitsLib.build(args));
     }
 
     // ==================== To (Recipient) Tests ====================
@@ -219,7 +220,7 @@ contract TakerTraitsTest is Test, OpcodesDebug {
         // to = address(0) by default
 
         vm.prank(taker);
-        swapVM.swap(order, 50e18, TakerTraitsLib.build(args));
+        swapVM.swap(order, address(tokenB), address(tokenA), 50e18, TakerTraitsLib.build(args));
 
         assertEq(tokenA.balanceOf(taker), takerBalanceBefore + 25e18, "Tokens should go to taker");
         assertEq(tokenA.balanceOf(recipient), 0, "Recipient should have 0");
@@ -235,7 +236,7 @@ contract TakerTraitsTest is Test, OpcodesDebug {
         args.to = recipient;
 
         vm.prank(taker);
-        swapVM.swap(order, 50e18, TakerTraitsLib.build(args));
+        swapVM.swap(order, address(tokenB), address(tokenA), 50e18, TakerTraitsLib.build(args));
 
         assertEq(tokenA.balanceOf(taker), takerBalanceBefore, "Taker balance should not change");
         assertEq(tokenA.balanceOf(recipient), recipientBalanceBefore + 25e18, "Tokens should go to recipient");
@@ -255,7 +256,7 @@ contract TakerTraitsTest is Test, OpcodesDebug {
 
         vm.prank(taker);
         (, uint256 amountOut,) = swapVM.swap(
-            order, 50e18, TakerTraitsLib.build(args)
+            order, address(tokenB), address(tokenA), 50e18, TakerTraitsLib.build(args)
         );
 
         assertEq(amountOut, 25e18);
@@ -275,7 +276,7 @@ contract TakerTraitsTest is Test, OpcodesDebug {
 
         vm.prank(taker);
         (uint256 amountIn, uint256 amountOut,) = swapVM.swap(
-            order, 50e18, TakerTraitsLib.build(args)
+            order, address(tokenB), address(tokenA), 50e18, TakerTraitsLib.build(args)
         );
 
         assertEq(amountIn, 50e18);
@@ -292,7 +293,7 @@ contract TakerTraitsTest is Test, OpcodesDebug {
 
         vm.prank(taker);
         (uint256 amountIn, uint256 amountOut,) = swapVM.swap(
-            order, 50e18, TakerTraitsLib.build(args)
+            order, address(tokenB), address(tokenA), 50e18, TakerTraitsLib.build(args)
         );
 
         assertEq(amountIn, 50e18);
@@ -337,7 +338,7 @@ contract TakerTraitsTest is Test, OpcodesDebug {
 
         vm.prank(taker);
         (uint256 amountIn, uint256 amountOut,) = swapVM.swap(
-            order, 50e18, TakerTraitsLib.build(args)
+            order, address(tokenB), address(tokenA), 50e18, TakerTraitsLib.build(args)
         );
 
         assertEq(amountIn, 50e18);
@@ -354,7 +355,7 @@ contract TakerTraitsTest is Test, OpcodesDebug {
 
         vm.prank(taker);
         (uint256 amountIn,,) = swapVM.swap(
-            order, 50e18, TakerTraitsLib.build(args)
+            order, address(tokenB), address(tokenA), 50e18, TakerTraitsLib.build(args)
         );
 
         assertEq(amountIn, 50e18);
@@ -368,7 +369,7 @@ contract TakerTraitsTest is Test, OpcodesDebug {
 
         vm.prank(taker);
         (, uint256 amountOut,) = swapVM.swap(
-            order, 25e18, TakerTraitsLib.build(args)
+            order, address(tokenB), address(tokenA), 25e18, TakerTraitsLib.build(args)
         );
 
         assertEq(amountOut, 25e18);
@@ -401,7 +402,7 @@ contract TakerTraitsTest is Test, OpcodesDebug {
         args.postTransferOutHookData = takerPostOutData;
 
         vm.prank(taker);
-        swapVM.swap(order, 50e18, TakerTraitsLib.build(args));
+        swapVM.swap(order, address(tokenB), address(tokenA), 50e18, TakerTraitsLib.build(args));
 
         assertTrue(hooksContract.allHooksCalled(), "All hooks should be called");
 
@@ -431,7 +432,7 @@ contract TakerTraitsTest is Test, OpcodesDebug {
 
         vm.prank(taker);
         (uint256 amountIn, uint256 amountOut,) = swapVM.swap(
-            order, 50e18, TakerTraitsLib.build(args)
+            order, address(tokenB), address(tokenA), 50e18, TakerTraitsLib.build(args)
         );
 
         assertEq(amountIn, 50e18);
@@ -459,7 +460,7 @@ contract TakerTraitsTest is Test, OpcodesDebug {
 
         vm.prank(taker);
         (uint256 amountIn, uint256 amountOut,) = swapVM.swap(
-            order, 50e18, TakerTraitsLib.build(args)
+            order, address(tokenB), address(tokenA), 50e18, TakerTraitsLib.build(args)
         );
 
         assertEq(amountIn, 50e18);
@@ -479,7 +480,6 @@ contract TakerTraitsTest is Test, OpcodesDebug {
             isStrictThresholdAmount: false,
             isFirstTransferFromTaker: true,
             useTransferFromAndAquaPush: false,
-            isAToB: false,
             threshold: "",
             to: address(0),
             deadline: 0,
@@ -497,20 +497,21 @@ contract TakerTraitsTest is Test, OpcodesDebug {
     }
 
     function _createLimitOrder(uint64 salt) internal view returns (ISwapVM.Order memory order, bytes memory signature) {
-        Program p;
+        Program memory p = ProgramBuilder.init(_opcodes());
         bytes memory programBytes = bytes.concat(
-            p.build(Opcode.StaticBalances,
-                BalancesArgsBuilder.build([uint256(MAKER_BALANCE_A), MAKER_BALANCE_B])),
-            p.build(Opcode.LimitSwap,
+            p.build(Balances._staticBalancesXD,
+                BalancesArgsBuilder.build(
+                    dynamic([address(tokenA), address(tokenB)]),
+                    dynamic([MAKER_BALANCE_A, MAKER_BALANCE_B])
+                )),
+            p.build(LimitSwap._limitSwap1D,
                 LimitSwapArgsBuilder.build(address(tokenB), address(tokenA))),
-            p.build(Opcode.Salt,
+            p.build(Controls._salt,
                 ControlsArgsBuilder.buildSalt(salt))
         );
 
         order = MakerTraitsLib.build(MakerTraitsLib.Args({
             maker: maker,
-            tokenA: address(tokenA),
-            tokenB: address(tokenB),
             shouldUnwrapWeth: false,
             useAquaInsteadOfSignature: false,
             allowZeroAmountIn: false,
@@ -543,20 +544,21 @@ contract TakerTraitsTest is Test, OpcodesDebug {
         bytes memory preOutData,
         bytes memory postOutData
     ) internal view returns (ISwapVM.Order memory order, bytes memory signature) {
-        Program p;
+        Program memory p = ProgramBuilder.init(_opcodes());
         bytes memory programBytes = bytes.concat(
-            p.build(Opcode.StaticBalances,
-                BalancesArgsBuilder.build([uint256(MAKER_BALANCE_A), MAKER_BALANCE_B])),
-            p.build(Opcode.LimitSwap,
+            p.build(Balances._staticBalancesXD,
+                BalancesArgsBuilder.build(
+                    dynamic([address(tokenA), address(tokenB)]),
+                    dynamic([MAKER_BALANCE_A, MAKER_BALANCE_B])
+                )),
+            p.build(LimitSwap._limitSwap1D,
                 LimitSwapArgsBuilder.build(address(tokenB), address(tokenA))),
-            p.build(Opcode.Salt,
+            p.build(Controls._salt,
                 ControlsArgsBuilder.buildSalt(salt))
         );
 
         order = MakerTraitsLib.build(MakerTraitsLib.Args({
             maker: maker,
-            tokenA: address(tokenA),
-            tokenB: address(tokenB),
             shouldUnwrapWeth: false,
             useAquaInsteadOfSignature: false,
             allowZeroAmountIn: false,

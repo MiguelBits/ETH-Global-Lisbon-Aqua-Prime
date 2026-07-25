@@ -9,9 +9,6 @@ import { MakerTraitsLib } from "../../../src/libs/MakerTraits.sol";
 import { TakerTraitsLib } from "../../../src/libs/TakerTraits.sol";
 import { PeggedFeesInvariants } from "../PeggedFeesInvariants.t.sol";
 import { TokenMockDecimals } from "../../mocks/TokenMockDecimals.sol";
-import { Program, ProgramBuilder, Opcode } from "../../utils/ProgramBuilder.sol";
-import { BalancesArgsBuilder } from "../../../src/instructions/Balances.sol";
-import { PeggedSwapArgsBuilder } from "../../../src/instructions/PeggedSwap.sol";
 
 /**
  * @title VeryImbalancedDifferentDecimals
@@ -19,8 +16,6 @@ import { PeggedSwapArgsBuilder } from "../../../src/instructions/PeggedSwap.sol"
  * @dev Token A has 18 decimals, Token B has 6 decimals (like USDC)
  */
 contract VeryImbalancedDifferentDecimals is PeggedFeesInvariants {
-    using ProgramBuilder for Program;
-
     function setUp() public override {
         // Skip super.setUp() - do custom initialization
         maker = vm.addr(makerPK);
@@ -28,11 +23,8 @@ contract VeryImbalancedDifferentDecimals is PeggedFeesInvariants {
         swapVM = new SwapVMRouter(address(aqua), address(0), address(this), "SwapVM", "1.0.0");
 
         // Create tokens with correct decimals: 18 and 6
-        TokenMock token18 = TokenMock(address(new TokenMockDecimals("Token I", "TKI", 18)));
-        TokenMock token6 = TokenMock(address(new TokenMockDecimals("Token J", "TKJ", 6)));
-
-        // Sort so tokenA < tokenB (required by MakerTraitsLib)
-        (tokenA, tokenB) = address(token18) < address(token6) ? (token18, token6) : (token6, token18);
+        tokenA = TokenMock(address(new TokenMockDecimals("Token A", "TKA", 18)));
+        tokenB = TokenMock(address(new TokenMockDecimals("Token B", "TKB", 6)));
 
         // Setup tokens and approvals for maker
         tokenA.mint(maker, type(uint128).max);
@@ -47,22 +39,22 @@ contract VeryImbalancedDifferentDecimals is PeggedFeesInvariants {
         tokenB.approve(address(swapVM), type(uint256).max);
 
         // Very imbalanced pool: 10e18 vs 10e6
-        // token18: 10 tokens with 18 decimals = 10e18
-        // token6:  10 tokens with 6 decimals = 10e6 (imbalance ratio = 1e12)
-        // balanceA/balanceB must follow ascending token address order (tokenA, tokenB).
-        // We need to scale the 6-decimal token by 1e12 to match the 18-decimal token.
-        if (address(token18) < address(token6)) {
-            // token18 is Lt (tokenA), token6 is Gt (tokenB)
-            balanceA = 10e18;   // 18 dec
-            balanceB = 10e6;    // 6 dec
-            rateLt = 1;      // token18 (18 dec)
-            rateGt = 1e12;   // token6 (6 dec) -> scales to 18
+        // TokenA: 10 tokens with 18 decimals = 10e18
+        // TokenB: 10 tokens with 6 decimals equivalent = 10e6
+        balanceA = 10e18;   // 10 tokens with 18 decimals
+        balanceB = 10e6;    // Very small amount (imbalance ratio = 1e12)
+
+        // Determine rates based on actual token addresses
+        // TokenA has 18 decimals, TokenB has 6 decimals
+        // We need to scale TokenB by 1e12 to match TokenA
+        if (address(tokenA) < address(tokenB)) {
+            // tokenA is Lt, tokenB is Gt
+            rateLt = 1;      // TokenA (18 dec)
+            rateGt = 1e12;   // TokenB (6 dec) -> scales to 18
         } else {
-            // token6 is Lt (tokenA), token18 is Gt (tokenB)
-            balanceA = 10e6;    // 6 dec
-            balanceB = 10e18;   // 18 dec
-            rateLt = 1e12;   // token6 (6 dec) -> scales to 18
-            rateGt = 1;      // token18 (18 dec)
+            // tokenB is Lt, tokenA is Gt
+            rateLt = 1e12;   // TokenB (6 dec) -> scales to 18
+            rateGt = 1;      // TokenA (18 dec)
         }
 
         // x0 and y0 should match the initial balance * rate for normalization
@@ -73,20 +65,16 @@ contract VeryImbalancedDifferentDecimals is PeggedFeesInvariants {
         // Standard linear width
         linearWidth = 0.8e27;
 
-        // Test amounts. Input amounts are in tokenA (input) decimals,
-        // exactOut amounts in tokenB (output) decimals.
-        uint256 unitIn = address(token18) < address(token6) ? 1e18 : 1e6;   // tokenA decimals
-        uint256 unitOut = address(token18) < address(token6) ? 1e6 : 1e18;  // tokenB decimals
-
+        // Test amounts
         testAmounts = new uint256[](3);
-        testAmounts[0] = unitIn / 10;       // 0.1 tokens
-        testAmounts[1] = unitIn / 2;        // 0.5 tokens
-        testAmounts[2] = unitIn;            // 1 token
+        testAmounts[0] = 1e17;   // 0.1 tokens
+        testAmounts[1] = 5e17;   // 0.5 tokens
+        testAmounts[2] = 1e18;   // 1 token
 
         testAmountsExactOut = new uint256[](3);
-        testAmountsExactOut[0] = unitOut / 10;  // 0.1 tokens
-        testAmountsExactOut[1] = unitOut / 2;   // 0.5 tokens
-        testAmountsExactOut[2] = unitOut;       // 1 token
+        testAmountsExactOut[0] = 1e5;   // 0.1 tokens (6 decimals scale)
+        testAmountsExactOut[1] = 5e5;   // 0.5 tokens
+        testAmountsExactOut[2] = 1e6;   // 1 token
 
         flatFeeInBps = 0.003e9;
         flatFeeOutBps = 0.003e9;
@@ -106,46 +94,58 @@ contract VeryImbalancedDifferentDecimals is PeggedFeesInvariants {
      *      would result in wildly incorrect exchange rates due to axis swap misalignment
      */
     function test_AsymmetricPool_ReverseSwap_NoAxisMismatch() public {
-        // Create an asymmetric pool setup to test the vulnerability.
-        // The 18-decimal token is the abundant asset (100,000 tokens),
-        // the 6-decimal token is the scarce asset (10 tokens).
+        // Create an asymmetric pool setup to test the vulnerability
+        // Token A (18 dec): abundant asset - 100,000 tokens
+        // Token B (6 dec): scarce asset - 10 tokens
         uint256 abundantBalance = 100_000e18;  // 100k tokens (18 decimals)
         uint256 scarceBalance = 10e6;          // 10 tokens (6 decimals)
 
-        // tokenA < tokenB is guaranteed by setUp. Map balances/rates to ascending
-        // address order, deriving decimals from the actual tokens.
-        bool tokenAIs18 = tokenA.decimals() == 18;
+        // Determine which token is abundant based on actual addresses
+        uint256 balanceTokenA;
+        uint256 balanceTokenB;
+        uint256 x0Config;
+        uint256 y0Config;
+        uint256 rateLtTest;
+        uint256 rateGtTest;
 
-        uint256 balanceTokenA = tokenAIs18 ? abundantBalance : scarceBalance;
-        uint256 balanceTokenB = tokenAIs18 ? scarceBalance : abundantBalance;
-        // rateLt scales tokenA to 18 decimals, rateGt scales tokenB.
-        uint256 rateLtTest = tokenAIs18 ? 1 : 1e12;
-        uint256 rateGtTest = tokenAIs18 ? 1e12 : 1;
-        // x0/y0 are the balances scaled to 18 decimals.
-        uint256 x0Config = balanceTokenA * rateLtTest;
-        uint256 y0Config = balanceTokenB * rateGtTest;
+        if (address(tokenA) < address(tokenB)) {
+            // tokenA is Lt (18 dec), tokenB is Gt (6 dec)
+            balanceTokenA = abundantBalance;
+            balanceTokenB = scarceBalance;
+            rateLtTest = 1;      // 18 decimals
+            rateGtTest = 1e12;   // 6 decimals -> scale to 18
+            x0Config = abundantBalance;
+            y0Config = scarceBalance * 1e12;  // Scaled
+        } else {
+            // tokenB is Lt (6 dec), tokenA is Gt (18 dec)
+            balanceTokenA = scarceBalance;
+            balanceTokenB = abundantBalance;
+            rateLtTest = 1e12;   // 6 decimals -> scale to 18
+            rateGtTest = 1;      // 18 decimals
+            x0Config = scarceBalance * 1e12;  // Scaled
+            y0Config = abundantBalance;
+        }
 
-        // Build order with asymmetric pool. Balances are positional in ascending
-        // token address order (tokenA, tokenB).
-        Program p;
-        bytes memory bytecode = bytes.concat(
-            p.build(Opcode.DynamicBalances,
-                BalancesArgsBuilder.build([balanceTokenA, balanceTokenB])),
-            p.build(Opcode.PeggedSwap,
-                PeggedSwapArgsBuilder.build(PeggedSwapArgsBuilder.Args({
-                    x0: x0Config,
-                    y0: y0Config,
-                    linearWidth: linearWidth,
-                    rateLt: rateLtTest,
-                    rateGt: rateGtTest
-                })))
+        // Build order with asymmetric pool
+        bytes memory bytecode = abi.encodePacked(
+            hex"01",  // _dynamicBalancesXD opcode
+            abi.encode(new address[](2)),  // Empty array placeholder
+            abi.encode(new uint256[](2)),  // Empty array placeholder
+            abi.encode(address(tokenA)),
+            abi.encode(address(tokenB)),
+            abi.encode(balanceTokenA),
+            abi.encode(balanceTokenB),
+            hex"0c",  // _peggedSwapGrowPriceRange2D opcode
+            abi.encode(x0Config),
+            abi.encode(y0Config),
+            abi.encode(linearWidth),
+            abi.encode(rateLtTest),
+            abi.encode(rateGtTest)
         );
 
         // Create order (using maker and swapVM from parent setup)
         ISwapVM.Order memory order = MakerTraitsLib.build(MakerTraitsLib.Args({
             maker: maker,
-            tokenA: address(tokenA),
-            tokenB: address(tokenB),
             shouldUnwrapWeth: false,
             useAquaInsteadOfSignature: false,
             allowZeroAmountIn: false,
@@ -170,9 +170,32 @@ contract VeryImbalancedDifferentDecimals is PeggedFeesInvariants {
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(makerPK, orderHash);
         bytes memory signature = abi.encodePacked(r, s, v);
 
+        bytes memory takerTraits = TakerTraitsLib.build(TakerTraitsLib.Args({
+            taker: address(0),
+            isExactIn: true,
+            shouldUnwrapWeth: false,
+            isStrictThresholdAmount: false,
+            isFirstTransferFromTaker: false,
+            useTransferFromAndAquaPush: false,
+            threshold: bytes(""),
+            to: address(this),
+            deadline: 0,
+            hasPreTransferInCallback: false,
+            hasPreTransferOutCallback: false,
+            preTransferInHookData: "",
+            postTransferInHookData: "",
+            preTransferOutHookData: "",
+            postTransferOutHookData: "",
+            preTransferInCallbackData: "",
+            preTransferOutCallbackData: "",
+            instructionsArgs: "",
+            signature: signature
+        }));
+
+        bytes memory exactInData = abi.encodePacked(takerTraits);
+
         // Test both directions with small swap amounts
-        uint256 swapAmount = 1e18;         // 1 token (18 decimals)
-        uint256 swapAmountReverse = 1e6;   // 1 token (6 decimals)
+        uint256 swapAmount = 1e18;  // 1 token (18 decimals)
 
         // Forward swap: abundant -> scarce
         address tokenInForward = address(tokenA) < address(tokenB) ? address(tokenA) : address(tokenB);
@@ -184,16 +207,8 @@ contract VeryImbalancedDifferentDecimals is PeggedFeesInvariants {
             tokenOutForward = address(tokenA);
         }
 
-        // Direction is selected via isAToB in taker data (tokenIn < tokenOut == A->B)
-        bytes memory exactInData = _reverseSwapTakerData(
-            signature, tokenInForward < tokenOutForward
-        );
-        bytes memory exactInDataReverse = _reverseSwapTakerData(
-            signature, tokenOutForward < tokenInForward
-        );
-
         try swapVM.asView().quote(
-            order, swapAmount, exactInData
+            order, tokenInForward, tokenOutForward, swapAmount, exactInData
         ) returns (uint256, uint256 outForward, bytes32) {
             // The output should be reasonable - not wildly inflated
             // Before the fix, reverse swap in asymmetric pool would give absurd amounts
@@ -233,7 +248,7 @@ contract VeryImbalancedDifferentDecimals is PeggedFeesInvariants {
 
         // Test reverse direction as well
         try swapVM.asView().quote(
-            order, swapAmountReverse, exactInDataReverse
+            order, tokenOutForward, tokenInForward, swapAmount, exactInData
         ) returns (uint256, uint256 outReverse, bytes32) {
             assertGt(outReverse, 0, "Reverse output should be non-zero");
 
@@ -245,40 +260,13 @@ contract VeryImbalancedDifferentDecimals is PeggedFeesInvariants {
                 outReverseScaled = outReverse * 1e12;
             }
 
-            uint256 normalizedInReverse = swapAmountReverse * 1e12;  // scale 6-dec input to 18
-            uint256 capacityRate = abundantBalance / (scarceBalance * 1e12);  // 10_000
             assertLe(
                 outReverseScaled,
-                normalizedInReverse * capacityRate * 2,
+                swapAmount * 20,
                 "Reverse direction also should not have axis mismatch"
             );
         } catch {
             // Also acceptable to revert
         }
-    }
-
-    function _reverseSwapTakerData(bytes memory signature, bool isAToB) private view returns (bytes memory) {
-        return abi.encodePacked(TakerTraitsLib.build(TakerTraitsLib.Args({
-            taker: address(0),
-            isExactIn: true,
-            shouldUnwrapWeth: false,
-            isStrictThresholdAmount: false,
-            isFirstTransferFromTaker: false,
-            useTransferFromAndAquaPush: false,
-            isAToB: isAToB,
-            threshold: bytes(""),
-            to: address(this),
-            deadline: 0,
-            hasPreTransferInCallback: false,
-            hasPreTransferOutCallback: false,
-            preTransferInHookData: "",
-            postTransferInHookData: "",
-            preTransferOutHookData: "",
-            postTransferOutHookData: "",
-            preTransferInCallbackData: "",
-            preTransferOutCallbackData: "",
-            instructionsArgs: "",
-            signature: signature
-        })));
     }
 }

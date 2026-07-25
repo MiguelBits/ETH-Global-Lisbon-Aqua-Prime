@@ -10,8 +10,6 @@ import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 /// @dev Uses 1e27 scale for higher precision (reduces rounding error by ~10^9)
 library PeggedSwapMath {
     uint256 internal constant ONE = 1e27;
-    // A is the linear width
-    uint256 internal constant MAX_LINEAR_WIDTH = 5000 * ONE;
 
     error PeggedSwapMathNoSolution();
     error PeggedSwapMathInvalidInput();
@@ -24,7 +22,7 @@ library PeggedSwapMath {
     function invariant(uint256 u, uint256 v, uint256 a) internal pure returns (uint256) {
         uint256 sqrtU = Math.sqrt(u * ONE);
         uint256 sqrtV = Math.sqrt(v * ONE);
-        // a * (u + v) / ONE - safe: a ≤ 5000e27 = 5e30, u+v ≤ 8e27 (each ≤ u* ≤ 4·ONE) → 4e58 < 1e77
+        // a * (u + v) / ONE - safe: a ≤ 2e27, u+v ≤ 2e27 → 4e54 < 1e77
         uint256 linearTerm = a * (u + v) / ONE;
         return sqrtU + sqrtV + linearTerm;
     }
@@ -43,7 +41,7 @@ library PeggedSwapMath {
         uint256 y0,
         uint256 a
     ) internal pure returns (uint256) {
-        // x * ONE / x0 - safe: x ≤ 1e30 (huge reserve scaled), ONE = 1e27 → 1e57 < 1e77
+        // x * ONE / x0 - safe: x ≤ 1e24 (huge reserve), ONE = 1e27 → 1e51 < 1e77
         uint256 u = x * ONE / x0;
         uint256 v = y * ONE / y0;
         return invariant(u, v, a);
@@ -55,12 +53,23 @@ library PeggedSwapMath {
     /// @dev Let w = √v, then: aw² + w = [c - √u - au]
     /// @dev Quadratic in w: aw² + w - rightSide = 0
     /// @dev Solution: w = (-1 + √(1 + 4a * rightSide)) / (2a)
-    /// @dev Takes rightSide = c - (√u + au) directly. The caller computes it, which lets callers that
-    ///      already know c >= (√u+au) (e.g. from a capacity check) skip a redundant bounds check.
-    /// @param rightSide c - (√u + au), scaled by sqrt(ONE); caller MUST guarantee it's non-negative
+    /// @param u Normalized x value (x/X₀) scaled by ONE
     /// @param a Linear width parameter scaled by ONE
+    /// @param invariantC Target invariant constant scaled by sqrt(ONE)
     /// @return v Normalized y value (y/Y₀) scaled by ONE
-    function solve(uint256 rightSide, uint256 a) internal pure returns (uint256 v) {
+    function solve(uint256 u, uint256 a, uint256 invariantC) internal pure returns (uint256 v) {
+        uint256 sqrtU = Math.sqrt(u * ONE);
+
+        // a * u / ONE - safe: a ≤ 2e27, u ≤ 2e27 → 4e54 < 1e77
+        uint256 au = a * u / ONE;
+
+        // Calculate rightSide = c - √u - au
+        // Need to check: invariantC >= sqrtU + au
+        uint256 sqrtUPlusAu = sqrtU + au;
+        require(invariantC >= sqrtUPlusAu, PeggedSwapMathInvalidInput());
+
+        uint256 rightSide = invariantC - sqrtUPlusAu;
+
         if (a == 0) {
             // Equation becomes: √v = rightSide, so v = rightSide²
             v = (rightSide * rightSide) / ONE;
@@ -83,23 +92,20 @@ library PeggedSwapMath {
         //
         // This form is stable for all values of a, including when a → 0.
 
-        // 4 * a * rightSide / ONE - safe: 4a ≤ 2e31, rightSide ≤ invariantC ≤ ~10002·ONE ≈ 1e31 → 2e62 < 1e77
+        // 4 * a * rightSide / ONE - safe: 4a ≤ 8e27, rightSide ≤ 2e27 → 16e54 < 1e77
         uint256 fourARightSide = 4 * a * rightSide / ONE;
 
         uint256 discriminant = ONE + fourARightSide;
 
-        // Round the discriminant root DOWN: smaller √D → larger v.
-        // A larger v is the maker-favorable
-        uint256 sqrtDiscriminant = Math.sqrt(discriminant * ONE, Math.Rounding.Floor);
+        uint256 sqrtDiscriminant = Math.sqrt(discriminant * ONE, Math.Rounding.Ceil);
 
         require(sqrtDiscriminant >= ONE, PeggedSwapMathNoSolution());
 
         uint256 denominator = ONE + sqrtDiscriminant;
 
-        // 2 * rightSide * ONE - safe: rightSide ≤ ~1e31, ONE = 1e27 → 2e58 < 1e77
         uint256 w = 2 * rightSide * ONE / denominator;
 
-        // w² / ONE - safe: w = √v ≤ 2·ONE (since v ≤ u* ≤ 4·ONE for any A ≥ 0; tighter at large A) → 4e54 < 1e77
+        // w² / ONE - safe: w ≤ 2e27 → 4e54 < 1e77
         v = w * w / ONE;
     }
 

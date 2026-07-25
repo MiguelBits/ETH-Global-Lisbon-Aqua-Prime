@@ -19,9 +19,8 @@ contract TinyLiquidity is ConcentrateXYCFeesInvariants {
         super.setUp();
 
         // Replace tokens with 6-decimal versions (like USDC/USDT)
-        tokenA = new TokenMockDecimals("Token I", "TKI", 6);
-        tokenB = new TokenMockDecimals("Token J", "TKJ", 6);
-        if (tokenA > tokenB) (tokenA, tokenB) = (tokenB, tokenA);
+        tokenA = new TokenMockDecimals("Token A", "TKA", 6);
+        tokenB = new TokenMockDecimals("Token B", "TKB", 6);
 
         // Setup tokens for maker
         TokenMockDecimals(address(tokenA)).mint(maker, type(uint128).max);

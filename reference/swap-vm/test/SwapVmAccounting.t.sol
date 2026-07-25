@@ -24,7 +24,8 @@ import { Decay, DecayArgsBuilder } from "../src/instructions/Decay.sol";
 import { PeggedSwap, PeggedSwapArgsBuilder } from "../src/instructions/PeggedSwap.sol";
 import { Balances, BalancesArgsBuilder } from "../src/instructions/Balances.sol";
 
-import { Program, ProgramBuilder, Opcode } from "./utils/ProgramBuilder.sol";
+import { Program, ProgramBuilder } from "./utils/ProgramBuilder.sol";
+import { dynamic } from "./utils/Dynamic.sol";
 
 /**
  * @title SwapVmAccounting
@@ -56,9 +57,8 @@ contract SwapVmAccounting is Test, OpcodesDebug {
     constructor() OpcodesDebug(address(new Aqua())) {}
 
     function setUp() public {
-        tokenA = new TokenMock("Token I", "TKI");
-        tokenB = new TokenMock("Token J", "TKJ");
-        if (tokenA > tokenB) (tokenA, tokenB) = (tokenB, tokenA);
+        tokenA = new TokenMock("Token A", "TKA");
+        tokenB = new TokenMock("Token B", "TKB");
 
         swapVM = new SwapVMRouterDebug(address(0), address(0), address(this), "SwapVM", "1.0.0");
         balancesContract = Balances(address(swapVM));
@@ -128,11 +128,10 @@ contract SwapVmAccounting is Test, OpcodesDebug {
         return abi.encodePacked(r, s, v);
     }
 
-    function buildTakerData(bool isExactIn, bool isAToB, bytes memory signature) internal view returns (bytes memory) {
+    function buildTakerData(bool isExactIn, bytes memory signature) internal view returns (bytes memory) {
         return TakerTraitsLib.build(TakerTraitsLib.Args({
             taker: taker,
             isExactIn: isExactIn,
-            isAToB: isAToB,
             shouldUnwrapWeth: false,
             isStrictThresholdAmount: false,
             isFirstTransferFromTaker: false,
@@ -158,9 +157,9 @@ contract SwapVmAccounting is Test, OpcodesDebug {
         bytes memory sig = signOrder(order);
         r.orderHash = swapVM.hash(order);
 
-        bytes memory takerData = buildTakerData(isExactIn, true, sig);
+        bytes memory takerData = buildTakerData(isExactIn, sig);
         vm.prank(taker);
-        (r.amountIn, r.amountOut,) = swapVM.swap(order, SWAP_AMOUNT, takerData);
+        (r.amountIn, r.amountOut,) = swapVM.swap(order, address(tokenA), address(tokenB), SWAP_AMOUNT, takerData);
     }
 
     function deployAndDoubleSwap(bytes memory program, bool isExactIn) internal returns (DoubleSwapResult memory r) {
@@ -168,16 +167,16 @@ contract SwapVmAccounting is Test, OpcodesDebug {
         bytes memory sig = signOrder(order);
         r.orderHash = swapVM.hash(order);
 
-        bytes memory takerData = buildTakerData(isExactIn, true, sig);
+        bytes memory takerData = buildTakerData(isExactIn, sig);
 
         vm.prank(taker);
-        (r.amountIn1, r.amountOut1,) = swapVM.swap(order, SWAP_AMOUNT, takerData);
+        (r.amountIn1, r.amountOut1,) = swapVM.swap(order, address(tokenA), address(tokenB), SWAP_AMOUNT, takerData);
         r.protocolFee1 = getProtocolFee();
 
         vm.warp(block.timestamp + 150);
 
         vm.prank(taker);
-        (r.amountIn2, r.amountOut2,) = swapVM.swap(order, SWAP_AMOUNT, takerData);
+        (r.amountIn2, r.amountOut2,) = swapVM.swap(order, address(tokenA), address(tokenB), SWAP_AMOUNT, takerData);
         r.protocolFee2 = getProtocolFee();
     }
 
@@ -210,8 +209,11 @@ contract SwapVmAccounting is Test, OpcodesDebug {
     // ===== PROGRAM BUILDERS =====
     // Order: protocolFee -> dynamicBalances -> [decay?] -> [concentrate?] -> flatFee -> swap / peggedSwap -> salt
 
-    function _dynamicBalancesArgs() internal pure returns (bytes memory) {
-        return BalancesArgsBuilder.build([uint256(INITIAL_BALANCE_A), INITIAL_BALANCE_B]);
+    function _dynamicBalancesArgs() internal view returns (bytes memory) {
+        return BalancesArgsBuilder.build(
+            dynamic([address(tokenA), address(tokenB)]),
+            dynamic([INITIAL_BALANCE_A, INITIAL_BALANCE_B])
+        );
     }
 
     function buildProgram(
@@ -219,31 +221,31 @@ contract SwapVmAccounting is Test, OpcodesDebug {
         uint32 flatFeeInBps,
         bool includeConcentrate
     ) internal view returns (bytes memory) {
-        Program p;
+        Program memory p = ProgramBuilder.init(_opcodes());
 
         bytes memory protocolFeeCode = protocolFeeBps > 0
-            ? p.build(Opcode.ProtocolFeeAmountIn, FeeArgsBuilder.buildProtocolFee(protocolFeeBps, protocolFeeRecipient))
+            ? p.build(Fee._protocolFeeAmountInXD, FeeArgsBuilder.buildProtocolFee(protocolFeeBps, protocolFeeRecipient))
             : bytes("");
 
         bytes memory concentrateCode = includeConcentrate
-            ? p.build(Opcode.XYCConcentrateSwap,
+            ? p.build(XYCConcentrate._xycConcentrateGrowLiquidity2D,
                      defaultConcentrateArgs())
             : bytes("");
 
         bytes memory flatFeeCode = flatFeeInBps > 0
-            ? p.build(Opcode.FlatFeeAmountIn, FeeArgsBuilder.buildFlatFee(flatFeeInBps))
+            ? p.build(Fee._flatFeeAmountInXD, FeeArgsBuilder.buildFlatFee(flatFeeInBps))
             : bytes("");
 
         bytes memory swapCode = includeConcentrate
             ? concentrateCode
-            : p.build(Opcode.XYCSwap);
+            : p.build(XYCSwap._xycSwapXD);
 
         return bytes.concat(
             protocolFeeCode,
-            p.build(Opcode.DynamicBalances, _dynamicBalancesArgs()),
+            p.build(Balances._dynamicBalancesXD, _dynamicBalancesArgs()),
             flatFeeCode,
             swapCode,
-            p.build(Opcode.Salt, abi.encodePacked(vm.randomUint()))
+            p.build(Controls._salt, abi.encodePacked(vm.randomUint()))
         ); 
     }
 
@@ -251,23 +253,23 @@ contract SwapVmAccounting is Test, OpcodesDebug {
         uint32 protocolFeeBps,
         uint32 flatFeeInBps
     ) internal view returns (bytes memory) {
-        Program p;
+        Program memory p = ProgramBuilder.init(_opcodes());
 
         bytes memory protocolFeeCode = protocolFeeBps > 0
-            ? p.build(Opcode.ProtocolFeeAmountIn, FeeArgsBuilder.buildProtocolFee(protocolFeeBps, protocolFeeRecipient))
+            ? p.build(Fee._protocolFeeAmountInXD, FeeArgsBuilder.buildProtocolFee(protocolFeeBps, protocolFeeRecipient))
             : bytes("");
 
         bytes memory flatFeeCode = flatFeeInBps > 0
-            ? p.build(Opcode.FlatFeeAmountIn, FeeArgsBuilder.buildFlatFee(flatFeeInBps))
+            ? p.build(Fee._flatFeeAmountInXD, FeeArgsBuilder.buildFlatFee(flatFeeInBps))
             : bytes("");
 
         return bytes.concat(
-            p.build(Opcode.DynamicBalances, _dynamicBalancesArgs()),
+            p.build(Balances._dynamicBalancesXD, _dynamicBalancesArgs()),
             protocolFeeCode, // WRONG: protocolFee after balances
             flatFeeCode,
-            p.build(Opcode.XYCConcentrateSwap,
+            p.build(XYCConcentrate._xycConcentrateGrowLiquidity2D,
                    defaultConcentrateArgs()),
-            p.build(Opcode.Salt, abi.encodePacked(vm.randomUint()))
+            p.build(Controls._salt, abi.encodePacked(vm.randomUint()))
         );
     }
 
@@ -276,24 +278,24 @@ contract SwapVmAccounting is Test, OpcodesDebug {
         uint16 decayPeriod,
         uint32 flatFeeInBps
     ) internal view returns (bytes memory) {
-        Program p;
+        Program memory p = ProgramBuilder.init(_opcodes());
 
         bytes memory protocolFeeCode = protocolFeeBps > 0
-            ? p.build(Opcode.ProtocolFeeAmountIn, FeeArgsBuilder.buildProtocolFee(protocolFeeBps, protocolFeeRecipient))
+            ? p.build(Fee._protocolFeeAmountInXD, FeeArgsBuilder.buildProtocolFee(protocolFeeBps, protocolFeeRecipient))
             : bytes("");
 
         bytes memory flatFeeCode = flatFeeInBps > 0
-            ? p.build(Opcode.FlatFeeAmountIn, FeeArgsBuilder.buildFlatFee(flatFeeInBps))
+            ? p.build(Fee._flatFeeAmountInXD, FeeArgsBuilder.buildFlatFee(flatFeeInBps))
             : bytes("");
 
         return bytes.concat(
             protocolFeeCode,
-            p.build(Opcode.DynamicBalances, _dynamicBalancesArgs()),
-            p.build(Opcode.Decay, DecayArgsBuilder.build(decayPeriod)),
+            p.build(Balances._dynamicBalancesXD, _dynamicBalancesArgs()),
+            p.build(Decay._decayXD, DecayArgsBuilder.build(decayPeriod)),
             flatFeeCode,
-            p.build(Opcode.XYCConcentrateSwap,
+            p.build(XYCConcentrate._xycConcentrateGrowLiquidity2D,
                    defaultConcentrateArgs()),
-            p.build(Opcode.Salt, abi.encodePacked(vm.randomUint()))
+            p.build(Controls._salt, abi.encodePacked(vm.randomUint()))
         );
     }
 
@@ -302,23 +304,23 @@ contract SwapVmAccounting is Test, OpcodesDebug {
         uint16 decayPeriod,
         uint32 flatFeeInBps
     ) internal view returns (bytes memory) {
-        Program p;
+        Program memory p = ProgramBuilder.init(_opcodes());
 
         bytes memory protocolFeeCode = protocolFeeBps > 0
-            ? p.build(Opcode.ProtocolFeeAmountIn, FeeArgsBuilder.buildProtocolFee(protocolFeeBps, protocolFeeRecipient))
+            ? p.build(Fee._protocolFeeAmountInXD, FeeArgsBuilder.buildProtocolFee(protocolFeeBps, protocolFeeRecipient))
             : bytes("");
 
         bytes memory flatFeeCode = flatFeeInBps > 0
-            ? p.build(Opcode.FlatFeeAmountIn, FeeArgsBuilder.buildFlatFee(flatFeeInBps))
+            ? p.build(Fee._flatFeeAmountInXD, FeeArgsBuilder.buildFlatFee(flatFeeInBps))
             : bytes("");
 
         return bytes.concat(
             protocolFeeCode,
-            p.build(Opcode.DynamicBalances, _dynamicBalancesArgs()),
-            p.build(Opcode.Decay, DecayArgsBuilder.build(decayPeriod)),
+            p.build(Balances._dynamicBalancesXD, _dynamicBalancesArgs()),
+            p.build(Decay._decayXD, DecayArgsBuilder.build(decayPeriod)),
             flatFeeCode,
-            p.build(Opcode.XYCSwap),
-            p.build(Opcode.Salt, abi.encodePacked(vm.randomUint()))
+            p.build(XYCSwap._xycSwapXD),
+            p.build(Controls._salt, abi.encodePacked(vm.randomUint()))
         );
     }
 
@@ -328,31 +330,29 @@ contract SwapVmAccounting is Test, OpcodesDebug {
         uint32 flatFeeInBps,
         PeggedSwapArgsBuilder.Args memory peggedArgs
     ) internal view returns (bytes memory) {
-        Program p;
+        Program memory p = ProgramBuilder.init(_opcodes());
 
         bytes memory protocolFeeCode = protocolFeeBps > 0
-            ? p.build(Opcode.ProtocolFeeAmountIn, FeeArgsBuilder.buildProtocolFee(protocolFeeBps, protocolFeeRecipient))
+            ? p.build(Fee._protocolFeeAmountInXD, FeeArgsBuilder.buildProtocolFee(protocolFeeBps, protocolFeeRecipient))
             : bytes("");
 
         bytes memory flatFeeCode = flatFeeInBps > 0
-            ? p.build(Opcode.FlatFeeAmountIn, FeeArgsBuilder.buildFlatFee(flatFeeInBps))
+            ? p.build(Fee._flatFeeAmountInXD, FeeArgsBuilder.buildFlatFee(flatFeeInBps))
             : bytes("");
 
         return bytes.concat(
             protocolFeeCode,
-            p.build(Opcode.DynamicBalances, _dynamicBalancesArgs()),
-            p.build(Opcode.Decay, DecayArgsBuilder.build(decayPeriod)),
+            p.build(Balances._dynamicBalancesXD, _dynamicBalancesArgs()),
+            p.build(Decay._decayXD, DecayArgsBuilder.build(decayPeriod)),
             flatFeeCode,
-            p.build(Opcode.PeggedSwap, PeggedSwapArgsBuilder.build(peggedArgs)),
-            p.build(Opcode.Salt, abi.encodePacked(vm.randomUint()))
+            p.build(PeggedSwap._peggedSwapGrowPriceRange2D, PeggedSwapArgsBuilder.build(peggedArgs)),
+            p.build(Controls._salt, abi.encodePacked(vm.randomUint()))
         );
     }
 
     function createOrder(bytes memory programBytes) internal view returns (ISwapVM.Order memory) {
         return MakerTraitsLib.build(MakerTraitsLib.Args({
             maker: maker,
-            tokenA: address(tokenA),
-            tokenB: address(tokenB),
             shouldUnwrapWeth: false,
             useAquaInsteadOfSignature: false,
             allowZeroAmountIn: false,

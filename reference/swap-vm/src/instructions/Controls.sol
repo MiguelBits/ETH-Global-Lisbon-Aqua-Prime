@@ -18,20 +18,8 @@ library ControlsArgsBuilder {
         return salt;
     }
 
-    function buildRevert(bytes4 exception) internal pure returns (bytes memory) {
-        return abi.encodePacked(exception);
-    }
-
-    function buildRevert(bytes memory exception) internal pure returns (bytes memory) {
-        return exception;
-    }
-
     function buildJump(uint16 nextPC) internal pure returns (bytes memory) {
         return abi.encodePacked(nextPC);
-    }
-
-    function buildJumpIfDirection(address tokenIn, address tokenOut, uint16 nextPC) internal pure returns (bytes memory) {
-        return abi.encodePacked(tokenIn < tokenOut, nextPC);
     }
 
     function buildJumpIfToken(address token, uint16 nextPC) internal pure returns (bytes memory) {
@@ -42,7 +30,7 @@ library ControlsArgsBuilder {
         return abi.encodePacked(deadline);
     }
 
-    function buildTokenBalanceNonZero(address token) internal pure returns (bytes memory) {
+    function buildTakerTokenBalanceNonZero(address token) internal pure returns (bytes memory) {
         return abi.encodePacked(token);
     }
 
@@ -62,10 +50,14 @@ contract Controls {
     using Calldata for bytes;
     using ContextLib for Context;
 
-    error InstructionRevert(bytes);
+    error JumpMissingNextPCArg();
+    error ControlsMissingTokenArg();
+    error ControlsMissingMinAmountArg();
+    error ControlsMissingMinShareArg();
+    error ControlsMissingDeadlineArg();
+
     error DeadlineReached(address taker, uint256 deadline);
     error TakerTokenBalanceIsZero(address taker, address token);
-    error TxOriginTokenBalanceIsZero(address txOrigin, address token);
     error TakerTokenBalanceIsLessThanRequired(address taker, address token, uint256 balance, uint256 minAmount);
     error TakerTokenBalanceSupplyShareIsLessThanRequired(address taker, address token, uint256 balance, uint256 totalSupply, uint256 minShareE18);
 
@@ -77,29 +69,8 @@ contract Controls {
     ///      For jumps to positions >= 65,536, use Extruction with custom control flow logic.
     /// @param args.nextPC | 2 bytes (uint16)
     function _jump(Context memory ctx, bytes calldata args) internal pure {
-        uint256 nextPC = uint16(bytes2(args));
+        uint256 nextPC = uint16(bytes2(args.slice(0, 2, JumpMissingNextPCArg.selector)));
         ctx.setNextPC(nextPC);
-    }
-
-    /// @dev Unconditional revert with specified reason encoded
-    function _revert(Context memory, bytes calldata args) internal pure {
-        revert InstructionRevert(args);
-    }
-
-    /// @dev Unconditional succesful execution stop
-    function _stop(Context memory ctx, bytes calldata) internal pure {
-        // VM has nothing to execute out of program bounds
-        ctx.setNextPC(type(uint256).max);
-    }
-
-    /// @dev Jumps if swap direction matches the expected one
-    function _jumpIfDirection(Context memory ctx, bytes calldata args) internal pure {
-        bool expectedDirection = bytes1(args) != 0;
-        bool swapDirection = ctx.query.tokenIn < ctx.query.tokenOut;
-        if (expectedDirection == swapDirection) {
-            uint256 nextPC = uint16(bytes2(args.slice(1)));
-            ctx.setNextPC(nextPC);
-        }
     }
 
     /// @dev Jumps if tokenIn is the specified token
@@ -107,9 +78,9 @@ contract Controls {
     /// @param args.token  | 20 bytes
     /// @param args.nextPC | 2 bytes (uint16)
     function _jumpIfTokenIn(Context memory ctx, bytes calldata args) internal pure {
-        address token = address(bytes20(args));
+        address token = address(bytes20(args.slice(0, 20, ControlsMissingTokenArg.selector)));
         if (token == ctx.query.tokenIn) {
-            uint256 nextPC = uint16(bytes2(args.slice(20)));
+            uint256 nextPC = uint16(bytes2(args.slice(20, 22, JumpMissingNextPCArg.selector)));
             ctx.setNextPC(nextPC);
         }
     }
@@ -119,9 +90,9 @@ contract Controls {
     /// @param args.token  | 20 bytes
     /// @param args.nextPC | 2 bytes (uint16)
     function _jumpIfTokenOut(Context memory ctx, bytes calldata args) internal pure {
-        address token = address(bytes20(args));
+        address token = address(bytes20(args.slice(0, 20, ControlsMissingTokenArg.selector)));
         if (token == ctx.query.tokenOut) {
-            uint256 nextPC = uint16(bytes2(args.slice(20)));
+            uint256 nextPC = uint16(bytes2(args.slice(20, 22, JumpMissingNextPCArg.selector)));
             ctx.setNextPC(nextPC);
         }
     }
@@ -129,38 +100,24 @@ contract Controls {
     /// @dev Reverts if the deadline has been reached
     /// @param args.deadline | 5 bytes
     function _deadline(Context memory ctx, bytes calldata args) internal view {
-        uint256 deadline = uint40(bytes5(args));
+        uint256 deadline = uint40(bytes5(args.slice(0, 5, ControlsMissingDeadlineArg.selector)));
         require(block.timestamp <= deadline, DeadlineReached(ctx.query.taker, deadline));
     }
 
     /// @dev Checks if the taker holds any amount of the specified token (NFTs are natively supported)
-    /// @dev Since EIP-7702, user may delegate it's account to certain code, potentially sharing authorization
-    ///   given even by soulbound NFT with other users
     /// @param args.token | 20 bytes
     function _onlyTakerTokenBalanceNonZero(Context memory ctx, bytes calldata args) internal view {
-        address token = address(bytes20(args));
+        address token = address(bytes20(args.slice(0, 20, ControlsMissingTokenArg.selector)));
         uint256 balance = IERC20(token).balanceOf(ctx.query.taker);
         require(balance > 0, TakerTokenBalanceIsZero(ctx.query.taker, token));
-    }
-
-    /// @dev Checks if tx.origin holds any amount of the specified token (NFTs are natively supported)
-    /// @dev The opcode allows authorized user to fill the order through 3rd-party contracts
-    ///   Validations through tx.origin are considered weak due to possible transaction flow interception
-    ///   E.g. authorized user performs transaction to 3rd-party protocol with no order filling intention,
-    ///   the 3rd-party protocol may use the authorization to fill the order
-    /// @param args.token | 20 bytes
-    function _onlyTxOriginTokenBalanceNonZero(Context memory /* ctx */, bytes calldata args) internal view {
-        address token = address(bytes20(args));
-        uint256 balance = IERC20(token).balanceOf(tx.origin);
-        require(balance > 0, TxOriginTokenBalanceIsZero(tx.origin, token));
     }
 
     /// @dev Checks if the taker holds at least a certain amount of tokens
     /// @param args.token     | 20 bytes
     /// @param args.minAmount | 32 bytes
     function _onlyTakerTokenBalanceGte(Context memory ctx, bytes calldata args) internal view {
-        address token = address(bytes20(args));
-        uint256 minAmount = uint256(bytes32(args.slice(20)));
+        address token = address(bytes20(args.slice(0, 20, ControlsMissingTokenArg.selector)));
+        uint256 minAmount = uint256(bytes32(args.slice(20, 52, ControlsMissingMinAmountArg.selector)));
         uint256 balance = IERC20(token).balanceOf(ctx.query.taker);
         require(balance >= minAmount, TakerTokenBalanceIsLessThanRequired(ctx.query.taker, token, balance, minAmount));
     }
@@ -169,8 +126,8 @@ contract Controls {
     /// @param args.token       | 20 bytes
     /// @param args.minShareE18 | 8 bytes
     function _onlyTakerTokenSupplyShareGte(Context memory ctx, bytes calldata args) internal view {
-        address token = address(bytes20(args));
-        uint256 minShareE18 = uint64(bytes8(args.slice(20)));
+        address token = address(bytes20(args.slice(0, 20, ControlsMissingTokenArg.selector)));
+        uint256 minShareE18 = uint64(bytes8(args.slice(20, 28, ControlsMissingMinShareArg.selector)));
         uint256 balance = IERC20(token).balanceOf(ctx.query.taker);
         uint256 totalSupply = IERC20(token).totalSupply();
         // balance * 1e18 / totalSupply >= minShareE18

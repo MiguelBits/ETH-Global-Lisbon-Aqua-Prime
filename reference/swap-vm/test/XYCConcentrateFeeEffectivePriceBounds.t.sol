@@ -17,6 +17,7 @@ import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 import { SafeCast } from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import { TokenMock } from "@1inch/solidity-utils/contracts/mocks/TokenMock.sol";
 import { Aqua } from "@1inch/aqua/src/Aqua.sol";
+import { dynamic } from "./utils/Dynamic.sol";
 
 import { SwapVM, ISwapVM } from "../src/SwapVM.sol";
 import { SwapVMRouter } from "../src/routers/SwapVMRouter.sol";
@@ -27,7 +28,7 @@ import { Fee, FeeArgsBuilder } from "../src/instructions/Fee.sol";
 import { XYCConcentrate, XYCConcentrateArgsBuilder } from "../src/instructions/XYCConcentrate.sol";
 import { Balances, BalancesArgsBuilder } from "../src/instructions/Balances.sol";
 
-import { Program, ProgramBuilder, Opcode } from "./utils/ProgramBuilder.sol";
+import { Program, ProgramBuilder } from "./utils/ProgramBuilder.sol";
 
 contract XYCConcentrateFeeEffectivePriceBoundsTest is Test, OpcodesDebug {
     using SafeCast for uint256;
@@ -77,16 +78,14 @@ contract XYCConcentrateFeeEffectivePriceBoundsTest is Test, OpcodesDebug {
         uint256 sqrtPriceMax,
         uint32 feeBps
     ) internal view returns (ISwapVM.Order memory order, bytes memory signature) {
-        Program program;
+        Program memory program = ProgramBuilder.init(_opcodes());
 
         bytes memory feeInstruction = feeBps > 0
-            ? program.build(Opcode.FlatFeeAmountIn, FeeArgsBuilder.buildFlatFee(feeBps))
+            ? program.build(Fee._flatFeeAmountInXD, FeeArgsBuilder.buildFlatFee(feeBps))
             : bytes("");
 
         order = MakerTraitsLib.build(MakerTraitsLib.Args({
             maker: maker,
-            tokenA: address(tokenETH),
-            tokenB: address(tokenUSD),
             shouldUnwrapWeth: false,
             useAquaInsteadOfSignature: false,
             allowZeroAmountIn: false,
@@ -104,9 +103,12 @@ contract XYCConcentrateFeeEffectivePriceBoundsTest is Test, OpcodesDebug {
             postTransferOutTarget: address(0),
             postTransferOutData: "",
             program: bytes.concat(
-                program.build(Opcode.DynamicBalances, BalancesArgsBuilder.build([uint256(balanceETH), balanceUSD])),
+                program.build(Balances._dynamicBalancesXD, BalancesArgsBuilder.build(
+                    dynamic([address(tokenUSD), address(tokenETH)]),
+                    dynamic([balanceUSD, balanceETH])
+                )),
                 feeInstruction,
-                program.build(Opcode.XYCConcentrateSwap,
+                program.build(XYCConcentrate._xycConcentrateGrowLiquidity2D,
                     XYCConcentrateArgsBuilder.build2D(sqrtPriceMin, sqrtPriceMax)
                 )
             )
@@ -118,10 +120,6 @@ contract XYCConcentrateFeeEffectivePriceBoundsTest is Test, OpcodesDebug {
     }
 
     function _takerData(bool isExactIn, bytes memory sig) internal view returns (bytes memory) {
-        return _takerData(isExactIn, sig, true);
-    }
-
-    function _takerData(bool isExactIn, bytes memory sig, bool isAToB) internal view returns (bytes memory) {
         return TakerTraitsLib.build(TakerTraitsLib.Args({
             taker: taker,
             isExactIn: isExactIn,
@@ -131,7 +129,6 @@ contract XYCConcentrateFeeEffectivePriceBoundsTest is Test, OpcodesDebug {
             isStrictThresholdAmount: false,
             isFirstTransferFromTaker: false,
             useTransferFromAndAquaPush: false,
-            isAToB: isAToB,
             threshold: "",
             to: address(0),
             deadline: 0,
@@ -172,10 +169,9 @@ contract XYCConcentrateFeeEffectivePriceBoundsTest is Test, OpcodesDebug {
         // Test 1: Sell ETH for USD (ExactIn: sell exactly 1 ETH)
         // AMM price: 2000 USD/ETH
         // Expected effective: 2000 * 0.97 = 1940 USD/ETH (get less USD due to fee)
-        // Sell ETH for USD: tokenETH -> tokenUSD, isAToB = true (tokenETH is lower).
         uint256 ethToSell = 1e18;
         vm.prank(taker);
-        (, uint256 usdReceived,) = swapVM.swap(order, ethToSell, _takerData(true, sig, true));
+        (, uint256 usdReceived,) = swapVM.swap(order, tokenETH, tokenUSD, ethToSell, _takerData(true, sig));
 
         uint256 effectivePriceSell = (usdReceived * 1e18) / ethToSell;
         uint256 expectedPriceSell = (Pmin * 97) / 100; // 1940e18
@@ -184,10 +180,9 @@ contract XYCConcentrateFeeEffectivePriceBoundsTest is Test, OpcodesDebug {
         // Test 2: Buy ETH with USD (ExactOut: get exactly 1 ETH)
         // AMM price: 2000 USD/ETH
         // Expected effective: 2000 / 0.97 = 2061.86 USD/ETH (pay more USD due to fee)
-        // Buy ETH with USD: tokenUSD -> tokenETH, isAToB = false (tokenUSD is higher).
         uint256 ethToBuy = 1e18;
         vm.prank(taker);
-        (uint256 usdPaid,,) = swapVM.swap(order, ethToBuy, _takerData(false, sig, false));
+        (uint256 usdPaid,,) = swapVM.swap(order, tokenUSD, tokenETH, ethToBuy, _takerData(false, sig));
 
         uint256 effectivePriceBuy = (usdPaid * 1e18) / ethToBuy;
         uint256 expectedPriceBuy = (Pmin * 100) / 97; // ~2061.86e18
@@ -220,10 +215,9 @@ contract XYCConcentrateFeeEffectivePriceBoundsTest is Test, OpcodesDebug {
         // Test 1: Sell ETH for USD (ExactIn: sell exactly 1 ETH)
         // AMM price: 4000 USD/ETH
         // Expected effective: 4000 * 0.97 = 3880 USD/ETH (get less USD due to fee)
-        // Sell ETH for USD: tokenETH -> tokenUSD, isAToB = true (tokenETH is lower).
         uint256 ethToSell = 1e18;
         vm.prank(taker);
-        (, uint256 usdReceived,) = swapVM.swap(order, ethToSell, _takerData(true, sig, true));
+        (, uint256 usdReceived,) = swapVM.swap(order, tokenETH, tokenUSD, ethToSell, _takerData(true, sig));
 
         uint256 effectivePriceSell = (usdReceived * 1e18) / ethToSell;
         uint256 expectedPriceSell = (Pmax * 97) / 100; // 3880e18
@@ -232,10 +226,9 @@ contract XYCConcentrateFeeEffectivePriceBoundsTest is Test, OpcodesDebug {
         // Test 2: Buy ETH with USD (ExactOut: get exactly 1 ETH)
         // AMM price: 4000 USD/ETH
         // Expected effective: 4000 / 0.97 = 4123.71 USD/ETH (pay more USD due to fee)
-        // Buy ETH with USD: tokenUSD -> tokenETH, isAToB = false (tokenUSD is higher).
         uint256 ethToBuy = 1e18;
         vm.prank(taker);
-        (uint256 usdPaid,,) = swapVM.swap(order, ethToBuy, _takerData(false, sig, false));
+        (uint256 usdPaid,,) = swapVM.swap(order, tokenUSD, tokenETH, ethToBuy, _takerData(false, sig));
 
         uint256 effectivePriceBuy = (usdPaid * 1e18) / ethToBuy;
         uint256 expectedPriceBuy = (Pmax * 100) / 97; // ~4123.71e18

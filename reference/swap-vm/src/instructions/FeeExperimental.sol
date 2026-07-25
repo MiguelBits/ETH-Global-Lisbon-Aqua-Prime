@@ -5,7 +5,8 @@ pragma solidity 0.8.30;
 /// @custom:copyright © 2025 Degensoft Ltd
 
 import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
-import { SafeERC20, IERC20 } from "@1inch/solidity-utils/contracts/libraries/SafeERC20.sol";
+import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { SafeERC20 } from "@1inch/solidity-utils/contracts/libraries/SafeERC20.sol";
 import { IAqua } from "@1inch/aqua/src/interfaces/IAqua.sol";
 
 import { Calldata } from "@1inch/solidity-utils/contracts/libraries/Calldata.sol";
@@ -17,6 +18,7 @@ library FeeArgsBuilderExperimental {
     using Calldata for bytes;
 
     error FeeBpsOutOfRange(uint32 feeBps);
+    error ProgressiveFeeMissingFeeBPS();
 
     function buildProgressiveFee(uint32 feeBps) internal pure returns (bytes memory) {
         require(feeBps <= BPS, FeeBpsOutOfRange(feeBps));
@@ -24,7 +26,7 @@ library FeeArgsBuilderExperimental {
     }
 
     function parseProgressiveFee(bytes calldata args) internal pure returns (uint32 feeBps) {
-        feeBps = uint32(bytes4(args));
+        feeBps = uint32(bytes4(args.slice(0, 4, ProgressiveFeeMissingFeeBPS.selector)));
     }
 }
 

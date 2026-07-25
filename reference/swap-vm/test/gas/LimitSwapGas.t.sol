@@ -15,7 +15,7 @@ import { SwapVMRouter } from "../../src/routers/SwapVMRouter.sol";
 import { MakerTraitsLib } from "../../src/libs/MakerTraits.sol";
 import { TakerTraitsLib } from "../../src/libs/TakerTraits.sol";
 import { OpcodesDebug } from "../../src/opcodes/OpcodesDebug.sol";
-import { Program, ProgramBuilder, Opcode } from "../utils/ProgramBuilder.sol";
+import { Program, ProgramBuilder } from "../utils/ProgramBuilder.sol";
 import { BalancesArgsBuilder } from "../../src/instructions/Balances.sol";
 import { LimitSwapArgsBuilder } from "../../src/instructions/LimitSwap.sol";
 import { DutchAuctionArgsBuilder } from "../../src/instructions/DutchAuction.sol";
@@ -26,6 +26,7 @@ import { FeeArgsBuilder } from "../../src/instructions/Fee.sol";
 import { FeeArgsBuilderExperimental } from "../../src/instructions/FeeExperimental.sol";
 import { ControlsArgsBuilder } from "../../src/instructions/Controls.sol";
 import { InvalidatorsArgsBuilder } from "../../src/instructions/Invalidators.sol";
+import { dynamic } from "../utils/Dynamic.sol";
 
 /**
  * @title LimitSwapGas
@@ -55,9 +56,8 @@ contract LimitSwapGas is Test, OpcodesDebug {
         taker = address(this);
         swapVM = new SwapVMRouter(address(aqua), address(0), address(this), "SwapVM", "1.0.0");
 
-        tokenA = new TokenMock("Token I", "TKI");
-        tokenB = new TokenMock("Token J", "TKJ");
-        if (address(tokenA) > address(tokenB)) (tokenA, tokenB) = (tokenB, tokenA);
+        tokenA = new TokenMock("Token A", "TKA");
+        tokenB = new TokenMock("Token B", "TKB");
 
         // Setup tokens and approvals for maker
         tokenA.mint(maker, 1e30);
@@ -80,7 +80,7 @@ contract LimitSwapGas is Test, OpcodesDebug {
         (ISwapVM.Order memory order, bytes memory takerData) = _createLimitSwapOrder(true);
 
         vm.startSnapshotGas("LimitSwap_quote_exactIn");
-        swapVM.asView().quote(order, SWAP_AMOUNT, takerData);
+        swapVM.asView().quote(order, address(tokenA), address(tokenB), SWAP_AMOUNT, takerData);
         vm.stopSnapshotGas();
     }
 
@@ -88,7 +88,7 @@ contract LimitSwapGas is Test, OpcodesDebug {
         (ISwapVM.Order memory order, bytes memory takerData) = _createLimitSwapOrder(false);
 
         vm.startSnapshotGas("LimitSwap_quote_exactOut");
-        swapVM.asView().quote(order, SWAP_AMOUNT, takerData);
+        swapVM.asView().quote(order, address(tokenA), address(tokenB), SWAP_AMOUNT, takerData);
         vm.stopSnapshotGas();
     }
 
@@ -96,7 +96,7 @@ contract LimitSwapGas is Test, OpcodesDebug {
         (ISwapVM.Order memory order, bytes memory takerData) = _createLimitSwapOrder(true);
 
         vm.startSnapshotGas("LimitSwap_swap_exactIn");
-        swapVM.swap(order, SWAP_AMOUNT, takerData);
+        swapVM.swap(order, address(tokenA), address(tokenB), SWAP_AMOUNT, takerData);
         vm.stopSnapshotGas();
     }
 
@@ -104,7 +104,7 @@ contract LimitSwapGas is Test, OpcodesDebug {
         (ISwapVM.Order memory order, bytes memory takerData) = _createLimitSwapOrder(false);
 
         vm.startSnapshotGas("LimitSwap_swap_exactOut");
-        swapVM.swap(order, SWAP_AMOUNT, takerData);
+        swapVM.swap(order, address(tokenA), address(tokenB), SWAP_AMOUNT, takerData);
         vm.stopSnapshotGas();
     }
 
@@ -114,7 +114,7 @@ contract LimitSwapGas is Test, OpcodesDebug {
         (ISwapVM.Order memory order, bytes memory takerData) = _createDutchAuctionOrder(true, true);
 
         vm.startSnapshotGas("DutchAuctionIn_LimitSwap_quote_exactIn");
-        swapVM.asView().quote(order, SWAP_AMOUNT, takerData);
+        swapVM.asView().quote(order, address(tokenA), address(tokenB), SWAP_AMOUNT, takerData);
         vm.stopSnapshotGas();
     }
 
@@ -122,7 +122,7 @@ contract LimitSwapGas is Test, OpcodesDebug {
         (ISwapVM.Order memory order, bytes memory takerData) = _createDutchAuctionOrder(true, false);
 
         vm.startSnapshotGas("DutchAuctionIn_LimitSwap_quote_exactOut");
-        swapVM.asView().quote(order, SWAP_AMOUNT, takerData);
+        swapVM.asView().quote(order, address(tokenA), address(tokenB), SWAP_AMOUNT, takerData);
         vm.stopSnapshotGas();
     }
 
@@ -130,7 +130,7 @@ contract LimitSwapGas is Test, OpcodesDebug {
         (ISwapVM.Order memory order, bytes memory takerData) = _createDutchAuctionOrder(true, true);
 
         vm.startSnapshotGas("DutchAuctionIn_LimitSwap_swap_exactIn");
-        swapVM.swap(order, SWAP_AMOUNT, takerData);
+        swapVM.swap(order, address(tokenA), address(tokenB), SWAP_AMOUNT, takerData);
         vm.stopSnapshotGas();
     }
 
@@ -138,7 +138,7 @@ contract LimitSwapGas is Test, OpcodesDebug {
         (ISwapVM.Order memory order, bytes memory takerData) = _createDutchAuctionOrder(true, false);
 
         vm.startSnapshotGas("DutchAuctionIn_LimitSwap_swap_exactOut");
-        swapVM.swap(order, SWAP_AMOUNT, takerData);
+        swapVM.swap(order, address(tokenA), address(tokenB), SWAP_AMOUNT, takerData);
         vm.stopSnapshotGas();
     }
 
@@ -146,7 +146,7 @@ contract LimitSwapGas is Test, OpcodesDebug {
         (ISwapVM.Order memory order, bytes memory takerData) = _createDutchAuctionOrder(false, true);
 
         vm.startSnapshotGas("DutchAuctionOut_LimitSwap_quote_exactIn");
-        swapVM.asView().quote(order, SWAP_AMOUNT, takerData);
+        swapVM.asView().quote(order, address(tokenA), address(tokenB), SWAP_AMOUNT, takerData);
         vm.stopSnapshotGas();
     }
 
@@ -154,7 +154,7 @@ contract LimitSwapGas is Test, OpcodesDebug {
         (ISwapVM.Order memory order, bytes memory takerData) = _createDutchAuctionOrder(false, false);
 
         vm.startSnapshotGas("DutchAuctionOut_LimitSwap_quote_exactOut");
-        swapVM.asView().quote(order, SWAP_AMOUNT, takerData);
+        swapVM.asView().quote(order, address(tokenA), address(tokenB), SWAP_AMOUNT, takerData);
         vm.stopSnapshotGas();
     }
 
@@ -162,7 +162,7 @@ contract LimitSwapGas is Test, OpcodesDebug {
         (ISwapVM.Order memory order, bytes memory takerData) = _createDutchAuctionOrder(false, true);
 
         vm.startSnapshotGas("DutchAuctionOut_LimitSwap_swap_exactIn");
-        swapVM.swap(order, SWAP_AMOUNT, takerData);
+        swapVM.swap(order, address(tokenA), address(tokenB), SWAP_AMOUNT, takerData);
         vm.stopSnapshotGas();
     }
 
@@ -170,7 +170,7 @@ contract LimitSwapGas is Test, OpcodesDebug {
         (ISwapVM.Order memory order, bytes memory takerData) = _createDutchAuctionOrder(false, false);
 
         vm.startSnapshotGas("DutchAuctionOut_LimitSwap_swap_exactOut");
-        swapVM.swap(order, SWAP_AMOUNT, takerData);
+        swapVM.swap(order, address(tokenA), address(tokenB), SWAP_AMOUNT, takerData);
         vm.stopSnapshotGas();
     }
 
@@ -181,7 +181,7 @@ contract LimitSwapGas is Test, OpcodesDebug {
         vm.warp(startTime + 1800); // 50% of duration unlocked
 
         vm.startSnapshotGas("TWAP_LimitSwap_quote_exactIn");
-        swapVM.asView().quote(order, SWAP_AMOUNT, takerData);
+        swapVM.asView().quote(order, address(tokenA), address(tokenB), SWAP_AMOUNT, takerData);
         vm.stopSnapshotGas();
     }
 
@@ -190,7 +190,7 @@ contract LimitSwapGas is Test, OpcodesDebug {
         vm.warp(startTime + 1800); // 50% of duration unlocked
 
         vm.startSnapshotGas("TWAP_LimitSwap_quote_exactOut");
-        swapVM.asView().quote(order, SWAP_AMOUNT, takerData);
+        swapVM.asView().quote(order, address(tokenA), address(tokenB), SWAP_AMOUNT, takerData);
         vm.stopSnapshotGas();
     }
 
@@ -199,7 +199,7 @@ contract LimitSwapGas is Test, OpcodesDebug {
         vm.warp(startTime + 1800); // 50% of duration unlocked
 
         vm.startSnapshotGas("TWAP_LimitSwap_swap_exactIn");
-        swapVM.swap(order, SWAP_AMOUNT, takerData);
+        swapVM.swap(order, address(tokenA), address(tokenB), SWAP_AMOUNT, takerData);
         vm.stopSnapshotGas();
     }
 
@@ -208,7 +208,7 @@ contract LimitSwapGas is Test, OpcodesDebug {
         vm.warp(startTime + 1800); // 50% of duration unlocked
 
         vm.startSnapshotGas("TWAP_LimitSwap_swap_exactOut");
-        swapVM.swap(order, SWAP_AMOUNT, takerData);
+        swapVM.swap(order, address(tokenA), address(tokenB), SWAP_AMOUNT, takerData);
         vm.stopSnapshotGas();
     }
 
@@ -218,7 +218,7 @@ contract LimitSwapGas is Test, OpcodesDebug {
         (ISwapVM.Order memory order, bytes memory takerData) = _createMinRateOrder(true);
 
         vm.startSnapshotGas("MinRate_LimitSwap_quote_exactIn");
-        swapVM.asView().quote(order, SWAP_AMOUNT, takerData);
+        swapVM.asView().quote(order, address(tokenA), address(tokenB), SWAP_AMOUNT, takerData);
         vm.stopSnapshotGas();
     }
 
@@ -226,7 +226,7 @@ contract LimitSwapGas is Test, OpcodesDebug {
         (ISwapVM.Order memory order, bytes memory takerData) = _createMinRateOrder(false);
 
         vm.startSnapshotGas("MinRate_LimitSwap_quote_exactOut");
-        swapVM.asView().quote(order, SWAP_AMOUNT, takerData);
+        swapVM.asView().quote(order, address(tokenA), address(tokenB), SWAP_AMOUNT, takerData);
         vm.stopSnapshotGas();
     }
 
@@ -234,7 +234,7 @@ contract LimitSwapGas is Test, OpcodesDebug {
         (ISwapVM.Order memory order, bytes memory takerData) = _createMinRateOrder(true);
 
         vm.startSnapshotGas("MinRate_LimitSwap_swap_exactIn");
-        swapVM.swap(order, SWAP_AMOUNT, takerData);
+        swapVM.swap(order, address(tokenA), address(tokenB), SWAP_AMOUNT, takerData);
         vm.stopSnapshotGas();
     }
 
@@ -242,7 +242,7 @@ contract LimitSwapGas is Test, OpcodesDebug {
         (ISwapVM.Order memory order, bytes memory takerData) = _createMinRateOrder(false);
 
         vm.startSnapshotGas("MinRate_LimitSwap_swap_exactOut");
-        swapVM.swap(order, SWAP_AMOUNT, takerData);
+        swapVM.swap(order, address(tokenA), address(tokenB), SWAP_AMOUNT, takerData);
         vm.stopSnapshotGas();
     }
 
@@ -252,7 +252,7 @@ contract LimitSwapGas is Test, OpcodesDebug {
         (ISwapVM.Order memory order, bytes memory takerData) = _createLimitSwapWithFeeOrder(true, true, false);
 
         vm.startSnapshotGas("LimitSwap_FlatFeeIn_quote_exactIn");
-        swapVM.asView().quote(order, SWAP_AMOUNT, takerData);
+        swapVM.asView().quote(order, address(tokenA), address(tokenB), SWAP_AMOUNT, takerData);
         vm.stopSnapshotGas();
     }
 
@@ -260,7 +260,7 @@ contract LimitSwapGas is Test, OpcodesDebug {
         (ISwapVM.Order memory order, bytes memory takerData) = _createLimitSwapWithFeeOrder(true, true, false);
 
         vm.startSnapshotGas("LimitSwap_FlatFeeIn_swap_exactIn");
-        swapVM.swap(order, SWAP_AMOUNT, takerData);
+        swapVM.swap(order, address(tokenA), address(tokenB), SWAP_AMOUNT, takerData);
         vm.stopSnapshotGas();
     }
 
@@ -270,7 +270,7 @@ contract LimitSwapGas is Test, OpcodesDebug {
         (ISwapVM.Order memory order, bytes memory takerData) = _createLimitSwapWithFeeOrder(false, true, false);
 
         vm.startSnapshotGas("LimitSwap_FlatFeeOut_quote_exactIn");
-        swapVM.asView().quote(order, SWAP_AMOUNT, takerData);
+        swapVM.asView().quote(order, address(tokenA), address(tokenB), SWAP_AMOUNT, takerData);
         vm.stopSnapshotGas();
     }
 
@@ -278,7 +278,7 @@ contract LimitSwapGas is Test, OpcodesDebug {
         (ISwapVM.Order memory order, bytes memory takerData) = _createLimitSwapWithFeeOrder(false, true, false);
 
         vm.startSnapshotGas("LimitSwap_FlatFeeOut_swap_exactIn");
-        swapVM.swap(order, SWAP_AMOUNT, takerData);
+        swapVM.swap(order, address(tokenA), address(tokenB), SWAP_AMOUNT, takerData);
         vm.stopSnapshotGas();
     }
 
@@ -288,7 +288,7 @@ contract LimitSwapGas is Test, OpcodesDebug {
         (ISwapVM.Order memory order, bytes memory takerData) = _createLimitSwapWithFeeOrder(true, true, true);
 
         vm.startSnapshotGas("LimitSwap_ProgressiveFee_quote_exactIn");
-        swapVM.asView().quote(order, SWAP_AMOUNT, takerData);
+        swapVM.asView().quote(order, address(tokenA), address(tokenB), SWAP_AMOUNT, takerData);
         vm.stopSnapshotGas();
     }
 
@@ -296,7 +296,7 @@ contract LimitSwapGas is Test, OpcodesDebug {
         (ISwapVM.Order memory order, bytes memory takerData) = _createLimitSwapWithFeeOrder(true, true, true);
 
         vm.startSnapshotGas("LimitSwap_ProgressiveFee_swap_exactIn");
-        swapVM.swap(order, SWAP_AMOUNT, takerData);
+        swapVM.swap(order, address(tokenA), address(tokenB), SWAP_AMOUNT, takerData);
         vm.stopSnapshotGas();
     }
 
@@ -306,7 +306,7 @@ contract LimitSwapGas is Test, OpcodesDebug {
         (ISwapVM.Order memory order, bytes memory takerData) = _createDeadlineLimitSwapOrder(true);
 
         vm.startSnapshotGas("Deadline_LimitSwap_quote_exactIn");
-        swapVM.asView().quote(order, SWAP_AMOUNT, takerData);
+        swapVM.asView().quote(order, address(tokenA), address(tokenB), SWAP_AMOUNT, takerData);
         vm.stopSnapshotGas();
     }
 
@@ -314,7 +314,7 @@ contract LimitSwapGas is Test, OpcodesDebug {
         (ISwapVM.Order memory order, bytes memory takerData) = _createDeadlineLimitSwapOrder(true);
 
         vm.startSnapshotGas("Deadline_LimitSwap_swap_exactIn");
-        swapVM.swap(order, SWAP_AMOUNT, takerData);
+        swapVM.swap(order, address(tokenA), address(tokenB), SWAP_AMOUNT, takerData);
         vm.stopSnapshotGas();
     }
 
@@ -324,7 +324,7 @@ contract LimitSwapGas is Test, OpcodesDebug {
         (ISwapVM.Order memory order, bytes memory takerData) = _createSaltLimitSwapOrder(true);
 
         vm.startSnapshotGas("Salt_LimitSwap_quote_exactIn");
-        swapVM.asView().quote(order, SWAP_AMOUNT, takerData);
+        swapVM.asView().quote(order, address(tokenA), address(tokenB), SWAP_AMOUNT, takerData);
         vm.stopSnapshotGas();
     }
 
@@ -332,7 +332,7 @@ contract LimitSwapGas is Test, OpcodesDebug {
         (ISwapVM.Order memory order, bytes memory takerData) = _createSaltLimitSwapOrder(true);
 
         vm.startSnapshotGas("Salt_LimitSwap_swap_exactIn");
-        swapVM.swap(order, SWAP_AMOUNT, takerData);
+        swapVM.swap(order, address(tokenA), address(tokenB), SWAP_AMOUNT, takerData);
         vm.stopSnapshotGas();
     }
 
@@ -342,7 +342,7 @@ contract LimitSwapGas is Test, OpcodesDebug {
         (ISwapVM.Order memory order, bytes memory takerData) = _createInvalidateBitLimitSwapOrder(true);
 
         vm.startSnapshotGas("InvalidateBit_LimitSwap_quote_exactIn");
-        swapVM.asView().quote(order, SWAP_AMOUNT, takerData);
+        swapVM.asView().quote(order, address(tokenA), address(tokenB), SWAP_AMOUNT, takerData);
         vm.stopSnapshotGas();
     }
 
@@ -350,7 +350,7 @@ contract LimitSwapGas is Test, OpcodesDebug {
         (ISwapVM.Order memory order, bytes memory takerData) = _createInvalidateBitLimitSwapOrder(true);
 
         vm.startSnapshotGas("InvalidateBit_LimitSwap_swap_exactIn");
-        swapVM.swap(order, SWAP_AMOUNT, takerData);
+        swapVM.swap(order, address(tokenA), address(tokenB), SWAP_AMOUNT, takerData);
         vm.stopSnapshotGas();
     }
 
@@ -360,7 +360,7 @@ contract LimitSwapGas is Test, OpcodesDebug {
         (ISwapVM.Order memory order, bytes memory takerData) = _createLimitSwapInvalidateTokenInOrder(true);
 
         vm.startSnapshotGas("LimitSwap_InvalidateTokenIn_quote_exactIn");
-        swapVM.asView().quote(order, SWAP_AMOUNT, takerData);
+        swapVM.asView().quote(order, address(tokenA), address(tokenB), SWAP_AMOUNT, takerData);
         vm.stopSnapshotGas();
     }
 
@@ -368,7 +368,7 @@ contract LimitSwapGas is Test, OpcodesDebug {
         (ISwapVM.Order memory order, bytes memory takerData) = _createLimitSwapInvalidateTokenInOrder(true);
 
         vm.startSnapshotGas("LimitSwap_InvalidateTokenIn_swap_exactIn");
-        swapVM.swap(order, SWAP_AMOUNT, takerData);
+        swapVM.swap(order, address(tokenA), address(tokenB), SWAP_AMOUNT, takerData);
         vm.stopSnapshotGas();
     }
 
@@ -378,7 +378,7 @@ contract LimitSwapGas is Test, OpcodesDebug {
         (ISwapVM.Order memory order, bytes memory takerData) = _createFullLimitSwapOrder(true);
 
         vm.startSnapshotGas("FullLimitSwap_quote_exactIn");
-        swapVM.asView().quote(order, SWAP_AMOUNT, takerData);
+        swapVM.asView().quote(order, address(tokenA), address(tokenB), SWAP_AMOUNT, takerData);
         vm.stopSnapshotGas();
     }
 
@@ -386,18 +386,21 @@ contract LimitSwapGas is Test, OpcodesDebug {
         (ISwapVM.Order memory order, bytes memory takerData) = _createFullLimitSwapOrder(true);
 
         vm.startSnapshotGas("FullLimitSwap_swap_exactIn");
-        swapVM.swap(order, SWAP_AMOUNT, takerData);
+        swapVM.swap(order, address(tokenA), address(tokenB), SWAP_AMOUNT, takerData);
         vm.stopSnapshotGas();
     }
 
     // ==================== Helper Functions ====================
 
     function _createLimitSwapOrder(bool isExactIn) private view returns (ISwapVM.Order memory, bytes memory) {
-        Program program;
+        Program memory program = ProgramBuilder.init(_opcodes());
         bytes memory bytecode = bytes.concat(
-            program.build(Opcode.StaticBalances,
-                BalancesArgsBuilder.build([uint256(BALANCE_A), BALANCE_B])),
-            program.build(Opcode.LimitSwap,
+            program.build(_staticBalancesXD,
+                BalancesArgsBuilder.build(
+                    dynamic([address(tokenA), address(tokenB)]),
+                    dynamic([BALANCE_A, BALANCE_B])
+                )),
+            program.build(_limitSwap1D,
                 LimitSwapArgsBuilder.build(address(tokenA), address(tokenB)))
         );
 
@@ -412,16 +415,19 @@ contract LimitSwapGas is Test, OpcodesDebug {
         uint16 duration = 300;
         uint64 decayFactor = 0.5e18; // 50% decay
 
-        Program program;
+        Program memory program = ProgramBuilder.init(_opcodes());
         bytes memory bytecode = bytes.concat(
-            program.build(Opcode.StaticBalances,
-                BalancesArgsBuilder.build([uint256(BALANCE_A), BALANCE_B])),
+            program.build(_staticBalancesXD,
+                BalancesArgsBuilder.build(
+                    dynamic([address(tokenA), address(tokenB)]),
+                    dynamic([BALANCE_A, BALANCE_B])
+                )),
             isAuctionIn ?
-                program.build(Opcode.DutchAuctionBalanceIn,
+                program.build(_dutchAuctionBalanceIn1D,
                     DutchAuctionArgsBuilder.build(startTime, duration, decayFactor)) :
-                program.build(Opcode.DutchAuctionBalanceOut,
+                program.build(_dutchAuctionBalanceOut1D,
                     DutchAuctionArgsBuilder.build(startTime, duration, decayFactor)),
-            program.build(Opcode.LimitSwap,
+            program.build(_limitSwap1D,
                 LimitSwapArgsBuilder.build(address(tokenA), address(tokenB)))
         );
 
@@ -437,11 +443,14 @@ contract LimitSwapGas is Test, OpcodesDebug {
         uint256 balanceOut = BALANCE_B;
         uint256 balanceIn = BALANCE_A;
 
-        Program program;
+        Program memory program = ProgramBuilder.init(_opcodes());
         bytes memory bytecode = bytes.concat(
-            program.build(Opcode.StaticBalances,
-                BalancesArgsBuilder.build([uint256(BALANCE_A), BALANCE_B])),
-            program.build(Opcode.TWAPSwap,
+            program.build(_staticBalancesXD,
+                BalancesArgsBuilder.build(
+                    dynamic([address(tokenA), address(tokenB)]),
+                    dynamic([BALANCE_A, BALANCE_B])
+                )),
+            program.build(_twap,
                 TWAPSwapArgsBuilder.build(TWAPSwapArgsBuilder.TwapArgs({
                     balanceIn: balanceIn,
                     balanceOut: balanceOut,
@@ -450,7 +459,7 @@ contract LimitSwapGas is Test, OpcodesDebug {
                     priceBumpAfterIlliquidity: 1.2e18,
                     minTradeAmountOut: 0.1e18
                 }))),
-            program.build(Opcode.LimitSwap,
+            program.build(_limitSwap1D,
                 LimitSwapArgsBuilder.build(address(tokenA), address(tokenB)))
         );
 
@@ -464,13 +473,16 @@ contract LimitSwapGas is Test, OpcodesDebug {
         uint64 rateA = 1e8; // 1 tokenA
         uint64 rateB = 1.5e8; // 1.5 tokenB per tokenA
 
-        Program program;
+        Program memory program = ProgramBuilder.init(_opcodes());
         bytes memory bytecode = bytes.concat(
-            program.build(Opcode.StaticBalances,
-                BalancesArgsBuilder.build([uint256(BALANCE_A), BALANCE_B])),
-            program.build(Opcode.AdjustMinRate,
+            program.build(_staticBalancesXD,
+                BalancesArgsBuilder.build(
+                    dynamic([address(tokenA), address(tokenB)]),
+                    dynamic([BALANCE_A, BALANCE_B])
+                )),
+            program.build(_adjustMinRate1D,
                 MinRateArgsBuilder.build(address(tokenA), address(tokenB), rateA, rateB)),
-            program.build(Opcode.LimitSwap,
+            program.build(_limitSwap1D,
                 LimitSwapArgsBuilder.build(address(tokenA), address(tokenB)))
         );
 
@@ -483,22 +495,25 @@ contract LimitSwapGas is Test, OpcodesDebug {
     function _createLimitSwapWithFeeOrder(bool isFeeIn, bool isExactIn, bool isProgressive) private view returns (ISwapVM.Order memory, bytes memory) {
         uint32 feeBps = 100; // 1%
 
-        Program program;
+        Program memory program = ProgramBuilder.init(_opcodes());
 
         bytes memory feeInstruction;
         if (isProgressive) {
-            feeInstruction = program.build(Opcode.ProgressiveFeeIn, FeeArgsBuilderExperimental.buildProgressiveFee(feeBps));
+            feeInstruction = program.build(_progressiveFeeInXD, FeeArgsBuilderExperimental.buildProgressiveFee(feeBps));
         } else if (isFeeIn) {
-            feeInstruction = program.build(Opcode.FlatFeeAmountIn, FeeArgsBuilder.buildFlatFee(feeBps));
+            feeInstruction = program.build(_flatFeeAmountInXD, FeeArgsBuilder.buildFlatFee(feeBps));
         } else {
-            feeInstruction = program.build(Opcode.FlatFeeAmountOut, FeeArgsBuilder.buildFlatFee(feeBps));
+            feeInstruction = program.build(_flatFeeAmountOutXD, FeeArgsBuilder.buildFlatFee(feeBps));
         }
 
         bytes memory bytecode = bytes.concat(
-            program.build(Opcode.StaticBalances,
-                BalancesArgsBuilder.build([uint256(BALANCE_A), BALANCE_B])),
+            program.build(_staticBalancesXD,
+                BalancesArgsBuilder.build(
+                    dynamic([address(tokenA), address(tokenB)]),
+                    dynamic([BALANCE_A, BALANCE_B])
+                )),
             feeInstruction,
-            program.build(Opcode.LimitSwap,
+            program.build(_limitSwap1D,
                 LimitSwapArgsBuilder.build(address(tokenA), address(tokenB)))
         );
 
@@ -511,8 +526,6 @@ contract LimitSwapGas is Test, OpcodesDebug {
     function _createOrder(bytes memory program) private view returns (ISwapVM.Order memory) {
         return MakerTraitsLib.build(MakerTraitsLib.Args({
             maker: maker,
-            tokenA: address(tokenA),
-            tokenB: address(tokenB),
             shouldUnwrapWeth: false,
             useAquaInsteadOfSignature: false,
             allowZeroAmountIn: false,
@@ -551,7 +564,6 @@ contract LimitSwapGas is Test, OpcodesDebug {
             isStrictThresholdAmount: false,
             isFirstTransferFromTaker: false,
             useTransferFromAndAquaPush: false,
-            isAToB: true,
             threshold: thresholdData,
             to: address(this),
             deadline: 0,
@@ -573,13 +585,16 @@ contract LimitSwapGas is Test, OpcodesDebug {
     function _createDeadlineLimitSwapOrder(bool isExactIn) private view returns (ISwapVM.Order memory, bytes memory) {
         uint40 deadline = uint40(block.timestamp + 3600); // 1 hour from now
 
-        Program program;
+        Program memory program = ProgramBuilder.init(_opcodes());
         bytes memory bytecode = bytes.concat(
-            program.build(Opcode.Deadline,
+            program.build(_deadline,
                 ControlsArgsBuilder.buildDeadline(deadline)),
-            program.build(Opcode.StaticBalances,
-                BalancesArgsBuilder.build([uint256(BALANCE_A), BALANCE_B])),
-            program.build(Opcode.LimitSwap,
+            program.build(_staticBalancesXD,
+                BalancesArgsBuilder.build(
+                    dynamic([address(tokenA), address(tokenB)]),
+                    dynamic([BALANCE_A, BALANCE_B])
+                )),
+            program.build(_limitSwap1D,
                 LimitSwapArgsBuilder.build(address(tokenA), address(tokenB)))
         );
 
@@ -592,13 +607,16 @@ contract LimitSwapGas is Test, OpcodesDebug {
     function _createSaltLimitSwapOrder(bool isExactIn) private view returns (ISwapVM.Order memory, bytes memory) {
         uint64 salt = 12345678;
 
-        Program program;
+        Program memory program = ProgramBuilder.init(_opcodes());
         bytes memory bytecode = bytes.concat(
-            program.build(Opcode.Salt,
+            program.build(_salt,
                 ControlsArgsBuilder.buildSalt(salt)),
-            program.build(Opcode.StaticBalances,
-                BalancesArgsBuilder.build([uint256(BALANCE_A), BALANCE_B])),
-            program.build(Opcode.LimitSwap,
+            program.build(_staticBalancesXD,
+                BalancesArgsBuilder.build(
+                    dynamic([address(tokenA), address(tokenB)]),
+                    dynamic([BALANCE_A, BALANCE_B])
+                )),
+            program.build(_limitSwap1D,
                 LimitSwapArgsBuilder.build(address(tokenA), address(tokenB)))
         );
 
@@ -611,13 +629,16 @@ contract LimitSwapGas is Test, OpcodesDebug {
     function _createInvalidateBitLimitSwapOrder(bool isExactIn) private view returns (ISwapVM.Order memory, bytes memory) {
         uint32 bitIndex = 42;
 
-        Program program;
+        Program memory program = ProgramBuilder.init(_opcodes());
         bytes memory bytecode = bytes.concat(
-            program.build(Opcode.InvalidateBit,
+            program.build(_invalidateBit1D,
                 InvalidatorsArgsBuilder.buildInvalidateBit(bitIndex)),
-            program.build(Opcode.StaticBalances,
-                BalancesArgsBuilder.build([uint256(BALANCE_A), BALANCE_B])),
-            program.build(Opcode.LimitSwap,
+            program.build(_staticBalancesXD,
+                BalancesArgsBuilder.build(
+                    dynamic([address(tokenA), address(tokenB)]),
+                    dynamic([BALANCE_A, BALANCE_B])
+                )),
+            program.build(_limitSwap1D,
                 LimitSwapArgsBuilder.build(address(tokenA), address(tokenB)))
         );
 
@@ -628,13 +649,16 @@ contract LimitSwapGas is Test, OpcodesDebug {
     }
 
     function _createLimitSwapInvalidateTokenInOrder(bool isExactIn) private view returns (ISwapVM.Order memory, bytes memory) {
-        Program program;
+        Program memory program = ProgramBuilder.init(_opcodes());
         bytes memory bytecode = bytes.concat(
-            program.build(Opcode.StaticBalances,
-                BalancesArgsBuilder.build([uint256(BALANCE_A), BALANCE_B])),
-            program.build(Opcode.LimitSwap,
+            program.build(_staticBalancesXD,
+                BalancesArgsBuilder.build(
+                    dynamic([address(tokenA), address(tokenB)]),
+                    dynamic([BALANCE_A, BALANCE_B])
+                )),
+            program.build(_limitSwap1D,
                 LimitSwapArgsBuilder.build(address(tokenA), address(tokenB))),
-            program.build(Opcode.InvalidateTokenIn)
+            program.build(_invalidateTokenIn1D)
         );
 
         ISwapVM.Order memory order = _createOrder(bytecode);
@@ -648,19 +672,22 @@ contract LimitSwapGas is Test, OpcodesDebug {
         uint64 salt = 99999;
         uint32 feeBps = 30; // 0.3%
 
-        Program program;
+        Program memory program = ProgramBuilder.init(_opcodes());
         bytes memory bytecode = bytes.concat(
-            program.build(Opcode.Deadline,
+            program.build(_deadline,
                 ControlsArgsBuilder.buildDeadline(deadline)),
-            program.build(Opcode.Salt,
+            program.build(_salt,
                 ControlsArgsBuilder.buildSalt(salt)),
-            program.build(Opcode.StaticBalances,
-                BalancesArgsBuilder.build([uint256(BALANCE_A), BALANCE_B])),
-            program.build(Opcode.FlatFeeAmountIn,
+            program.build(_staticBalancesXD,
+                BalancesArgsBuilder.build(
+                    dynamic([address(tokenA), address(tokenB)]),
+                    dynamic([BALANCE_A, BALANCE_B])
+                )),
+            program.build(_flatFeeAmountInXD,
                 FeeArgsBuilder.buildFlatFee(feeBps)),
-            program.build(Opcode.LimitSwap,
+            program.build(_limitSwap1D,
                 LimitSwapArgsBuilder.build(address(tokenA), address(tokenB))),
-            program.build(Opcode.InvalidateTokenIn)
+            program.build(_invalidateTokenIn1D)
         );
 
         ISwapVM.Order memory order = _createOrder(bytecode);

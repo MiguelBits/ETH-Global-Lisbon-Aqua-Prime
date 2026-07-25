@@ -23,7 +23,7 @@ import { Fee, FeeArgsBuilder } from "../src/instructions/Fee.sol";
 import { FeeExperimental, FeeArgsBuilderExperimental } from "../src/instructions/FeeExperimental.sol";
 import { Debug } from "../src/instructions/Debug.sol";
 
-import { Program, ProgramBuilder, Opcode } from "./utils/ProgramBuilder.sol";
+import { Program, ProgramBuilder } from "./utils/ProgramBuilder.sol";
 
 uint256 constant ONE = 1e18;
 
@@ -49,9 +49,8 @@ contract ProgressiveFeeTest is Test, OpcodesDebug {
         swapVM = new SwapVMRouterDebug(address(0), address(0), address(this), "SwapVM", "1.0.0");
 
         // Deploy mock tokens
-        tokenA = address(new TokenMock("Token I", "TKI"));
-        tokenB = address(new TokenMock("Token J", "TKJ"));
-        if (tokenA > tokenB) (tokenA, tokenB) = (tokenB, tokenA);
+        tokenA = address(new TokenMock("Token A", "TKA"));
+        tokenB = address(new TokenMock("Token B", "TKB"));
 
         // Setup initial balances
         TokenMock(tokenA).mint(maker, 1_000_000_000e18);
@@ -80,26 +79,27 @@ contract ProgressiveFeeTest is Test, OpcodesDebug {
     }
 
     function _createOrder(MakerSetup memory setup) internal view returns (ISwapVM.Order memory order, bytes memory signature) {
-        Program program;
+        Program memory program = ProgramBuilder.init(_opcodes());
         bytes memory programBytes = bytes.concat(
             // 1. Set initial token balances
-            program.build(Opcode.DynamicBalances,
-                BalancesArgsBuilder.build([uint256(setup.balanceA), setup.balanceB])),
+            program.build(Balances._dynamicBalancesXD,
+                BalancesArgsBuilder.build(
+                    dynamic([tokenA, tokenB]),
+                    dynamic([setup.balanceA, setup.balanceB])
+                )),
             // 2. Apply progressive fee based on rate change
-            program.build(Opcode.ProgressiveFeeIn,
+            program.build(FeeExperimental._progressiveFeeInXD,
                 FeeArgsBuilderExperimental.buildProgressiveFee(setup.progressiveFeeBps)),
             // 3. Apply flat fee on top of progressive fee
-            (setup.flatFeeBps) > 0 ? program.build(Opcode.FlatFeeAmountIn,
+            (setup.flatFeeBps) > 0 ? program.build(Fee._flatFeeAmountInXD,
                 FeeArgsBuilder.buildFlatFee(setup.flatFeeBps)) : bytes(""),
             // 4. Perform the swap
-            program.build(Opcode.XYCSwap)
+            program.build(XYCSwap._xycSwapXD)
         );
 
         // === Create Order ===
         order = MakerTraitsLib.build(MakerTraitsLib.Args({
             maker: maker,
-            tokenA: tokenA,
-            tokenB: tokenB,
             shouldUnwrapWeth: false,
             useAquaInsteadOfSignature: false,
             allowZeroAmountIn: false,
@@ -136,7 +136,6 @@ contract ProgressiveFeeTest is Test, OpcodesDebug {
             isStrictThresholdAmount: false,
             isFirstTransferFromTaker: false,
             useTransferFromAndAquaPush: false,
-            isAToB: true,
             threshold: "",
             to: address(0),
             deadline: 0,
@@ -172,8 +171,8 @@ contract ProgressiveFeeTest is Test, OpcodesDebug {
         uint256 amountIn1 = 10e18;
         uint256 amountIn2 = 20e18;
         bytes memory exactInTakerData = _makeTakerData(TakerSetup({ isExactIn: true }), "");
-        (, uint256 amountOut1,) = swapVM.asView().quote(order, amountIn1, exactInTakerData);
-        (, uint256 amountOut2,) = swapVM.asView().quote(order, amountIn2, exactInTakerData);
+        (, uint256 amountOut1,) = swapVM.asView().quote(order, tokenA, tokenB, amountIn1, exactInTakerData);
+        (, uint256 amountOut2,) = swapVM.asView().quote(order, tokenA, tokenB, amountIn2, exactInTakerData);
 
         // Analyze results
         uint256 increaseInvPerAmountIn1 = _calculateIncreaseInvPerUnit(setup.balanceA, setup.balanceB, amountIn1, amountOut1, amountIn1);
@@ -196,8 +195,8 @@ contract ProgressiveFeeTest is Test, OpcodesDebug {
         uint256 amountOut1 = 10e18;
         uint256 amountOut2 = 20e18;
         bytes memory exactOutTakerData = _makeTakerData(TakerSetup({ isExactIn: false }), "");
-        (uint256 amountIn1,,) = swapVM.asView().quote(order, amountOut1, exactOutTakerData);
-        (uint256 amountIn2,,) = swapVM.asView().quote(order, amountOut2, exactOutTakerData);
+        (uint256 amountIn1,,) = swapVM.asView().quote(order, tokenA, tokenB, amountOut1, exactOutTakerData);
+        (uint256 amountIn2,,) = swapVM.asView().quote(order, tokenA, tokenB, amountOut2, exactOutTakerData);
 
         // Analyze results
         uint256 increaseInvPerAmountOut1 = _calculateIncreaseInvPerUnit(setup.balanceA, setup.balanceB, amountIn1, amountOut1, amountOut1);
@@ -221,11 +220,11 @@ contract ProgressiveFeeTest is Test, OpcodesDebug {
         uint256 amountIn2 = 20e18;
         uint256 amountInTotal = amountIn1 + amountIn2;
         bytes memory exactInTakerData = _makeTakerData(TakerSetup({ isExactIn: true }), signature);
-        (, uint256 amountOutTotal,) = swapVM.asView().quote(order, amountInTotal, exactInTakerData);
+        (, uint256 amountOutTotal,) = swapVM.asView().quote(order, tokenA, tokenB, amountInTotal, exactInTakerData);
 
         vm.prank(taker);
-        (, uint256 amountOut1,) = swapVM.swap(order, amountIn1, exactInTakerData);
-        (, uint256 amountOut2,) = swapVM.asView().quote(order, amountIn2, exactInTakerData);
+        (, uint256 amountOut1,) = swapVM.swap(order, tokenA, tokenB, amountIn1, exactInTakerData);
+        (, uint256 amountOut2,) = swapVM.asView().quote(order, tokenA, tokenB, amountIn2, exactInTakerData);
 
         // Analyze results
         assertGt(amountInTotal * ONE / amountOutTotal, amountInTotal * ONE / (amountOut1 + amountOut2), "Splitting amounts should result in better rate compared to single swap");
@@ -246,11 +245,11 @@ contract ProgressiveFeeTest is Test, OpcodesDebug {
         uint256 amountOut2 = 10e18;
         uint256 amountOutTotal = amountOut1 + amountOut2;
         bytes memory exactOutTakerData = _makeTakerData(TakerSetup({ isExactIn: false }), signature);
-        (uint256 amountInTotal,,) = swapVM.asView().quote(order, amountOutTotal, exactOutTakerData);
+        (uint256 amountInTotal,,) = swapVM.asView().quote(order, tokenA, tokenB, amountOutTotal, exactOutTakerData);
 
         vm.prank(taker);
-        (uint256 amountIn1,,) = swapVM.swap(order, amountOut1, exactOutTakerData);
-        (uint256 amountIn2,,) = swapVM.asView().quote(order, amountOut2, exactOutTakerData);
+        (uint256 amountIn1,,) = swapVM.swap(order, tokenA, tokenB, amountOut1, exactOutTakerData);
+        (uint256 amountIn2,,) = swapVM.asView().quote(order, tokenA, tokenB, amountOut2, exactOutTakerData);
 
         // Analyze results
         assertGt(amountInTotal * ONE / amountOutTotal, (amountIn1 + amountIn2) * ONE / amountOutTotal, "Splitting amounts should result in better rate compared to single swap");
@@ -274,8 +273,8 @@ contract ProgressiveFeeTest is Test, OpcodesDebug {
         bytes memory exactInTakerData = _makeTakerData(TakerSetup({ isExactIn: true }), "");
 
         for (uint256 amountIn = 10e18; amountIn <= 400e18; amountIn += 10e18) {
-            (, uint256 amountOutProgressive,) = swapVM.asView().quote(orderWithProgressiveFee, amountIn, exactInTakerData);
-            (, uint256 amountOutFlat,) = swapVM.asView().quote(orderWithFlatFee, amountIn, exactInTakerData);
+            (, uint256 amountOutProgressive,) = swapVM.asView().quote(orderWithProgressiveFee, tokenA, tokenB, amountIn, exactInTakerData);
+            (, uint256 amountOutFlat,) = swapVM.asView().quote(orderWithFlatFee, tokenA, tokenB, amountIn, exactInTakerData);
 
             if (amountIn < amountInWhereFeesEqual) {
                 assertGt(amountOutProgressive, amountOutFlat, "Progressive fee should provide better rate for smaller amounts");
@@ -303,8 +302,8 @@ contract ProgressiveFeeTest is Test, OpcodesDebug {
         bytes memory exactOutTakerData = _makeTakerData(TakerSetup({ isExactIn: false }), "");
 
         for (uint256 amountOut = 10e18; amountOut < 190e18; amountOut += 10e18) {
-            (uint256 amountInProgressive,,) = swapVM.asView().quote(orderWithProgressiveFee, amountOut, exactOutTakerData);
-            (uint256 amountInFlat,,) = swapVM.asView().quote(orderWithFlatFee, amountOut, exactOutTakerData);
+            (uint256 amountInProgressive,,) = swapVM.asView().quote(orderWithProgressiveFee, tokenA, tokenB, amountOut, exactOutTakerData);
+            (uint256 amountInFlat,,) = swapVM.asView().quote(orderWithFlatFee, tokenA, tokenB, amountOut, exactOutTakerData);
 
             if (amountOut > amountOutWhereFeesEqual) {
                 assertGe(amountInProgressive, amountInFlat, "Progressive fee should provide better rate for smaller amounts");
@@ -330,7 +329,7 @@ contract ProgressiveFeeTest is Test, OpcodesDebug {
         uint256 tolerance = 1e10;
 
         for (uint i = 0; i < amounts.length; i++) {
-            (uint256 amountIn, uint256 amountOut,) = swapVM.asView().quote(order, amounts[i], exactOutTakerData);
+            (uint256 amountIn, uint256 amountOut,) = swapVM.asView().quote(order, tokenA, tokenB, amounts[i], exactOutTakerData);
             uint256 priceImpact = (amountIn * setup.balanceB) * ONE / (amountOut * setup.balanceA) - ONE;
             uint256 invGrowth = _calculateIncreaseInvPerUnit(setup.balanceA, setup.balanceB, amountIn, amountOut, amountOut);
             uint256 ratio = invGrowth * ONE / priceImpact;
@@ -357,7 +356,7 @@ contract ProgressiveFeeTest is Test, OpcodesDebug {
         bytes memory exactInTakerData = _makeTakerData(TakerSetup({ isExactIn: true }), "");
 
         for (uint i = 0; i < amounts.length; i++) {
-            (uint256 amountIn, uint256 amountOut,) = swapVM.asView().quote(order, amounts[i], exactInTakerData);
+            (uint256 amountIn, uint256 amountOut,) = swapVM.asView().quote(order, tokenA, tokenB, amounts[i], exactInTakerData);
 
             // Expected result from standard AMM formula: xy = k
             uint256 expectedOut = amounts[i] * setup.balanceB / (setup.balanceA + amounts[i]);
@@ -384,7 +383,7 @@ contract ProgressiveFeeTest is Test, OpcodesDebug {
         bytes memory exactOutTakerData = _makeTakerData(TakerSetup({ isExactIn: false }), "");
 
         for (uint i = 0; i < amounts.length; i++) {
-            (uint256 amountIn, uint256 amountOut,) = swapVM.asView().quote(order, amounts[i], exactOutTakerData);
+            (uint256 amountIn, uint256 amountOut,) = swapVM.asView().quote(order, tokenA, tokenB, amounts[i], exactOutTakerData);
 
             // Expected result from standard AMM formula: xy = k
             uint256 expectedIn = (amounts[i] * setup.balanceA + (setup.balanceB - amounts[i]) - 1) / (setup.balanceB - amounts[i]);
@@ -410,16 +409,16 @@ contract ProgressiveFeeTest is Test, OpcodesDebug {
         // Quoting order with both fees
         uint256 amountIn = 20e18;
         bytes memory exactInTakerData = _makeTakerData(TakerSetup({ isExactIn: true }), "");
-        (, uint256 amountOutWithBothFees,) = swapVM.asView().quote(order, amountIn, exactInTakerData);
+        (, uint256 amountOutWithBothFees,) = swapVM.asView().quote(order, tokenA, tokenB, amountIn, exactInTakerData);
 
         setup.flatFeeBps = 0; // Remove flat fee
         (ISwapVM.Order memory orderWithFlatFees,) = _createOrder(setup);
-        (, uint256 amountOutWithProgressiveFee,) = swapVM.asView().quote(orderWithFlatFees, amountIn, exactInTakerData);
+        (, uint256 amountOutWithProgressiveFee,) = swapVM.asView().quote(orderWithFlatFees, tokenA, tokenB, amountIn, exactInTakerData);
 
         setup.progressiveFeeBps = 0; // Remove progressive fee
         setup.flatFeeBps = 0.05e9; // Restore flat fee
         (ISwapVM.Order memory orderWithFlatFee,) = _createOrder(setup);
-        (, uint256 amountOutWithFlatFee,) = swapVM.asView().quote(orderWithFlatFee, amountIn, exactInTakerData);
+        (, uint256 amountOutWithFlatFee,) = swapVM.asView().quote(orderWithFlatFee, tokenA, tokenB, amountIn, exactInTakerData);
 
         // Analyze results
         uint256 increaseInvPerAmountInBothFees = _calculateIncreaseInvPerUnit(setup.balanceA, setup.balanceB, amountIn, amountOutWithBothFees, amountIn);
@@ -444,16 +443,16 @@ contract ProgressiveFeeTest is Test, OpcodesDebug {
         // Quoting order with both fees
         uint256 amountOut = 20e18;
         bytes memory exactOutTakerData = _makeTakerData(TakerSetup({ isExactIn: false }), "");
-        (uint256 amountInWithBothFees,,) = swapVM.asView().quote(order, amountOut, exactOutTakerData);
+        (uint256 amountInWithBothFees,,) = swapVM.asView().quote(order, tokenA, tokenB, amountOut, exactOutTakerData);
 
         setup.flatFeeBps = 0; // Remove flat fee
         (ISwapVM.Order memory orderWithProgressiveFee,) = _createOrder(setup);
-        (uint256 amountInWithProgressiveFee,,) = swapVM.asView().quote(orderWithProgressiveFee, amountOut, exactOutTakerData);
+        (uint256 amountInWithProgressiveFee,,) = swapVM.asView().quote(orderWithProgressiveFee, tokenA, tokenB, amountOut, exactOutTakerData);
 
         setup.progressiveFeeBps = 0; // Remove progressive fee
         setup.flatFeeBps = 0.05e9; // Restore flat fee
         (ISwapVM.Order memory orderWithFlatFee,) = _createOrder(setup);
-        (uint256 amountInWithFlatFee,,) = swapVM.asView().quote(orderWithFlatFee, amountOut, exactOutTakerData);
+        (uint256 amountInWithFlatFee,,) = swapVM.asView().quote(orderWithFlatFee, tokenA, tokenB, amountOut, exactOutTakerData);
 
         // Analyze results
         uint256 increaseInvPerAmountOutBothFees = _calculateIncreaseInvPerUnit(setup.balanceA, setup.balanceB, amountInWithBothFees, amountOut, amountOut);
@@ -478,11 +477,11 @@ contract ProgressiveFeeTest is Test, OpcodesDebug {
         // Quoting exact in
         uint256 amountIn = 20e18;
         bytes memory exactInTakerData = _makeTakerData(TakerSetup({ isExactIn: true }), "");
-        (, uint256 amountOut,) = swapVM.asView().quote(order, amountIn, exactInTakerData);
+        (, uint256 amountOut,) = swapVM.asView().quote(order, tokenA, tokenB, amountIn, exactInTakerData);
 
         // Quoting exact out
         bytes memory exactOutTakerData = _makeTakerData(TakerSetup({ isExactIn: false }), "");
-        (uint256 amountInQuotedBack,,) = swapVM.asView().quote(order, amountOut, exactOutTakerData);
+        (uint256 amountInQuotedBack,,) = swapVM.asView().quote(order, tokenA, tokenB, amountOut, exactOutTakerData);
 
         // Analyze results
         assertApproxEqAbs(amountIn, amountInQuotedBack, 1e12, "Quoted back amountIn should match original within tolerance");

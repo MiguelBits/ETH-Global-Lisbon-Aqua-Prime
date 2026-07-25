@@ -4,7 +4,8 @@ pragma solidity 0.8.30;
 /// @custom:license-url https://github.com/1inch/swap-vm/blob/main/LICENSES/SwapVM-1.1.txt
 /// @custom:copyright © 2025 Degensoft Ltd
 
-import { SafeERC20, IERC20 } from "@1inch/solidity-utils/contracts/libraries/SafeERC20.sol";
+import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { SafeERC20 } from "@1inch/solidity-utils/contracts/libraries/SafeERC20.sol";
 import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 import { IAqua } from "@1inch/aqua/src/interfaces/IAqua.sol";
 
@@ -19,6 +20,10 @@ library FeeArgsBuilder {
     using Calldata for bytes;
 
     error FeeBpsOutOfRange(uint32 feeBps);
+    error FeeMissingFeeBPS();
+    error ProtocolFeeMissingFeeBPS();
+    error ProtocolFeeMissingTo();
+    error ProtocolFeeProviderMissingAddress();
 
     function buildFlatFee(uint32 feeBps) internal pure returns (bytes memory) {
         require(feeBps <= BPS, FeeBpsOutOfRange(feeBps));
@@ -35,16 +40,16 @@ library FeeArgsBuilder {
     }
 
     function parseFlatFee(bytes calldata args) internal pure returns (uint32 feeBps) {
-        feeBps = uint32(bytes4(args));
+        feeBps = uint32(bytes4(args.slice(0, 4, FeeMissingFeeBPS.selector)));
     }
 
     function parseProtocolFee(bytes calldata args) internal pure returns (uint32 feeBps, address to) {
-        feeBps = uint32(bytes4(args));
-        to = address(uint160(bytes20(args.slice(4))));
+        feeBps = uint32(bytes4(args.slice(0, 4, ProtocolFeeMissingFeeBPS.selector)));
+        to = address(uint160(bytes20(args.slice(4, 24, ProtocolFeeMissingTo.selector))));
     }
 
     function parseDynamicProtocolFee(bytes calldata args) internal pure returns (address feeProvider) {
-        feeProvider = address(uint160(bytes20(args)));
+        feeProvider = address(uint160(bytes20(args.slice(0, 20, ProtocolFeeProviderMissingAddress.selector))));
     }
 }
 
@@ -71,9 +76,10 @@ contract Fee {
         // This is the same _feeAmountIn call, just with rounding up.
         if (ctx.query.isExactIn) {
             // Decrease amountIn by fee only during swap-instruction
+            uint256 takerDefinedAmountIn = ctx.swap.amountIn;
             ctx.swap.amountIn -= Math.ceilDiv(ctx.swap.amountIn * feeBps, BPS);
             ctx.runLoop();
-            ctx.swap.amountIn += Math.ceilDiv(ctx.swap.amountIn * feeBps, BPS - feeBps);
+            ctx.swap.amountIn = takerDefinedAmountIn;
         } else {
             // Increase amountIn by fee after swap-instruction
             ctx.runLoop();
@@ -133,7 +139,7 @@ contract Fee {
     ///   break numerical consistency between quote() and swap().
     /// @dev REENTRANCY SAFETY:
     ///   - Uses staticcall preventing state changes by feeProvider
-    ///   - Protected by TransientLockUnsafe on orderHash level in SwapVM.swap()
+    ///   - Protected by TransientLock on orderHash level in SwapVM.swap()
     ///   - Fee calculation and state changes happen AFTER external call
     ///   - feeProvider MUST NOT rely on intermediate swap state
     ///   CAUTION: Takers should verify feeProvider trustworthiness before executing.
@@ -182,7 +188,7 @@ contract Fee {
     ///   consistency between quote() and swap().
     /// @dev REENTRANCY SAFETY:
     ///   - Uses staticcall preventing state changes by feeProvider
-    ///   - Protected by TransientLockUnsafe on orderHash level in SwapVM.swap()
+    ///   - Protected by TransientLock on orderHash level in SwapVM.swap()
     ///   - Fee calculation and state changes happen AFTER external call
     ///   - feeProvider MUST NOT rely on intermediate swap state
     ///   CAUTION: Takers should verify feeProvider trustworthiness before executing.
@@ -228,11 +234,11 @@ contract Fee {
 
         if (ctx.query.isExactIn) {
             // Decrease amountIn by fee only during swap-instruction
+            uint256 takerDefinedAmountIn = ctx.swap.amountIn;
             feeAmountIn = ctx.swap.amountIn * feeBps / BPS;
             ctx.swap.amountIn -= feeAmountIn;
             ctx.runLoop();
-            feeAmountIn = ctx.swap.amountIn * feeBps / (BPS - feeBps);
-            ctx.swap.amountIn += feeAmountIn;
+            ctx.swap.amountIn = takerDefinedAmountIn;
         } else {
             // Increase amountIn by fee after swap-instruction
             ctx.runLoop();

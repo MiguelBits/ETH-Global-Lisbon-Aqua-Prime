@@ -16,11 +16,12 @@ import { SwapVMRouter } from "../../src/routers/SwapVMRouter.sol";
 import { MakerTraitsLib } from "../../src/libs/MakerTraits.sol";
 import { TakerTraitsLib } from "../../src/libs/TakerTraits.sol";
 import { OpcodesDebug } from "../../src/opcodes/OpcodesDebug.sol";
-import { Program, ProgramBuilder, Opcode } from "../utils/ProgramBuilder.sol";
+import { Program, ProgramBuilder } from "../utils/ProgramBuilder.sol";
 import { BalancesArgsBuilder } from "../../src/instructions/Balances.sol";
 import { XYCConcentrateArgsBuilder } from "../../src/instructions/XYCConcentrate.sol";
 import { DecayArgsBuilder } from "../../src/instructions/Decay.sol";
 import { FeeArgsBuilder } from "../../src/instructions/Fee.sol";
+import { dynamic } from "../utils/Dynamic.sol";
 
 /**
  * @title AMMGas
@@ -50,9 +51,8 @@ contract AMMGas is Test, OpcodesDebug {
         taker = address(this);
         swapVM = new SwapVMRouter(address(aqua), address(0), address(this), "SwapVM", "1.0.0");
 
-        tokenA = new TokenMock("Token I", "TKI");
-        tokenB = new TokenMock("Token J", "TKJ");
-        if (address(tokenA) > address(tokenB)) (tokenA, tokenB) = (tokenB, tokenA);
+        tokenA = new TokenMock("Token A", "TKA");
+        tokenB = new TokenMock("Token B", "TKB");
 
         // Setup tokens and approvals for maker
         tokenA.mint(maker, 1e30);
@@ -92,7 +92,7 @@ contract AMMGas is Test, OpcodesDebug {
         (ISwapVM.Order memory order, bytes memory takerData) = _createXYCSwapOrder(true);
 
         vm.startSnapshotGas("XYCSwap_quote_exactIn");
-        swapVM.asView().quote(order, SWAP_AMOUNT, takerData);
+        swapVM.asView().quote(order, address(tokenA), address(tokenB), SWAP_AMOUNT, takerData);
         vm.stopSnapshotGas();
     }
 
@@ -100,7 +100,7 @@ contract AMMGas is Test, OpcodesDebug {
         (ISwapVM.Order memory order, bytes memory takerData) = _createXYCSwapOrder(false);
 
         vm.startSnapshotGas("XYCSwap_quote_exactOut");
-        swapVM.asView().quote(order, SWAP_AMOUNT, takerData);
+        swapVM.asView().quote(order, address(tokenA), address(tokenB), SWAP_AMOUNT, takerData);
         vm.stopSnapshotGas();
     }
 
@@ -108,7 +108,7 @@ contract AMMGas is Test, OpcodesDebug {
         (ISwapVM.Order memory order, bytes memory takerData) = _createXYCSwapOrder(true);
 
         vm.startSnapshotGas("XYCSwap_swap_exactIn");
-        swapVM.swap(order, SWAP_AMOUNT, takerData);
+        swapVM.swap(order, address(tokenA), address(tokenB), SWAP_AMOUNT, takerData);
         vm.stopSnapshotGas();
     }
 
@@ -116,7 +116,7 @@ contract AMMGas is Test, OpcodesDebug {
         (ISwapVM.Order memory order, bytes memory takerData) = _createXYCSwapOrder(false);
 
         vm.startSnapshotGas("XYCSwap_swap_exactOut");
-        swapVM.swap(order, SWAP_AMOUNT, takerData);
+        swapVM.swap(order, address(tokenA), address(tokenB), SWAP_AMOUNT, takerData);
         vm.stopSnapshotGas();
     }
 
@@ -126,7 +126,7 @@ contract AMMGas is Test, OpcodesDebug {
         (ISwapVM.Order memory order, bytes memory takerData) = _createConcentrateGrowLiquidityOrder(true);
 
         vm.startSnapshotGas("ConcentrateGrowLiquidity_XYCSwap_quote_exactIn");
-        swapVM.asView().quote(order, SWAP_AMOUNT, takerData);
+        swapVM.asView().quote(order, address(tokenA), address(tokenB), SWAP_AMOUNT, takerData);
         vm.stopSnapshotGas();
     }
 
@@ -134,7 +134,7 @@ contract AMMGas is Test, OpcodesDebug {
         (ISwapVM.Order memory order, bytes memory takerData) = _createConcentrateGrowLiquidityOrder(false);
 
         vm.startSnapshotGas("ConcentrateGrowLiquidity_XYCSwap_quote_exactOut");
-        swapVM.asView().quote(order, SWAP_AMOUNT, takerData);
+        swapVM.asView().quote(order, address(tokenA), address(tokenB), SWAP_AMOUNT, takerData);
         vm.stopSnapshotGas();
     }
 
@@ -142,7 +142,7 @@ contract AMMGas is Test, OpcodesDebug {
         (ISwapVM.Order memory order, bytes memory takerData) = _createConcentrateGrowLiquidityOrder(true);
 
         vm.startSnapshotGas("ConcentrateGrowLiquidity_XYCSwap_swap_exactIn");
-        swapVM.swap(order, SWAP_AMOUNT, takerData);
+        swapVM.swap(order, address(tokenA), address(tokenB), SWAP_AMOUNT, takerData);
         vm.stopSnapshotGas();
     }
 
@@ -150,7 +150,7 @@ contract AMMGas is Test, OpcodesDebug {
         (ISwapVM.Order memory order, bytes memory takerData) = _createConcentrateGrowLiquidityOrder(false);
 
         vm.startSnapshotGas("ConcentrateGrowLiquidity_XYCSwap_swap_exactOut");
-        swapVM.swap(order, SWAP_AMOUNT, takerData);
+        swapVM.swap(order, address(tokenA), address(tokenB), SWAP_AMOUNT, takerData);
         vm.stopSnapshotGas();
     }
 
@@ -158,7 +158,7 @@ contract AMMGas is Test, OpcodesDebug {
         (ISwapVM.Order memory order, bytes memory takerData) = _createConcentrateGrowPriceRangeOrder(true);
 
         vm.startSnapshotGas("ConcentrateGrowPriceRange_XYCSwap_quote_exactIn");
-        swapVM.asView().quote(order, SWAP_AMOUNT, takerData);
+        swapVM.asView().quote(order, address(tokenA), address(tokenB), SWAP_AMOUNT, takerData);
         vm.stopSnapshotGas();
     }
 
@@ -166,7 +166,7 @@ contract AMMGas is Test, OpcodesDebug {
         (ISwapVM.Order memory order, bytes memory takerData) = _createConcentrateGrowPriceRangeOrder(true);
 
         vm.startSnapshotGas("ConcentrateGrowPriceRange_XYCSwap_swap_exactIn");
-        swapVM.swap(order, SWAP_AMOUNT, takerData);
+        swapVM.swap(order, address(tokenA), address(tokenB), SWAP_AMOUNT, takerData);
         vm.stopSnapshotGas();
     }
 
@@ -176,7 +176,7 @@ contract AMMGas is Test, OpcodesDebug {
         (ISwapVM.Order memory order, bytes memory takerData) = _createDecayXYCSwapOrder(true);
 
         vm.startSnapshotGas("Decay_XYCSwap_quote_exactIn");
-        swapVM.asView().quote(order, SWAP_AMOUNT, takerData);
+        swapVM.asView().quote(order, address(tokenA), address(tokenB), SWAP_AMOUNT, takerData);
         vm.stopSnapshotGas();
     }
 
@@ -184,7 +184,7 @@ contract AMMGas is Test, OpcodesDebug {
         (ISwapVM.Order memory order, bytes memory takerData) = _createDecayXYCSwapOrder(false);
 
         vm.startSnapshotGas("Decay_XYCSwap_quote_exactOut");
-        swapVM.asView().quote(order, SWAP_AMOUNT, takerData);
+        swapVM.asView().quote(order, address(tokenA), address(tokenB), SWAP_AMOUNT, takerData);
         vm.stopSnapshotGas();
     }
 
@@ -192,7 +192,7 @@ contract AMMGas is Test, OpcodesDebug {
         (ISwapVM.Order memory order, bytes memory takerData) = _createDecayXYCSwapOrder(true);
 
         vm.startSnapshotGas("Decay_XYCSwap_swap_exactIn");
-        swapVM.swap(order, SWAP_AMOUNT, takerData);
+        swapVM.swap(order, address(tokenA), address(tokenB), SWAP_AMOUNT, takerData);
         vm.stopSnapshotGas();
     }
 
@@ -200,7 +200,7 @@ contract AMMGas is Test, OpcodesDebug {
         (ISwapVM.Order memory order, bytes memory takerData) = _createDecayXYCSwapOrder(false);
 
         vm.startSnapshotGas("Decay_XYCSwap_swap_exactOut");
-        swapVM.swap(order, SWAP_AMOUNT, takerData);
+        swapVM.swap(order, address(tokenA), address(tokenB), SWAP_AMOUNT, takerData);
         vm.stopSnapshotGas();
     }
 
@@ -210,7 +210,7 @@ contract AMMGas is Test, OpcodesDebug {
         (ISwapVM.Order memory order, bytes memory takerData) = _createConcentrateDecayXYCSwapOrder(true);
 
         vm.startSnapshotGas("Concentrate_Decay_XYCSwap_quote_exactIn");
-        swapVM.asView().quote(order, SWAP_AMOUNT, takerData);
+        swapVM.asView().quote(order, address(tokenA), address(tokenB), SWAP_AMOUNT, takerData);
         vm.stopSnapshotGas();
     }
 
@@ -218,7 +218,7 @@ contract AMMGas is Test, OpcodesDebug {
         (ISwapVM.Order memory order, bytes memory takerData) = _createConcentrateDecayXYCSwapOrder(true);
 
         vm.startSnapshotGas("Concentrate_Decay_XYCSwap_swap_exactIn");
-        swapVM.swap(order, SWAP_AMOUNT, takerData);
+        swapVM.swap(order, address(tokenA), address(tokenB), SWAP_AMOUNT, takerData);
         vm.stopSnapshotGas();
     }
 
@@ -228,7 +228,7 @@ contract AMMGas is Test, OpcodesDebug {
         (ISwapVM.Order memory order, bytes memory takerData) = _createXYCSwapWithFeeOrder(true, true);
 
         vm.startSnapshotGas("XYCSwap_FlatFeeIn_quote_exactIn");
-        swapVM.asView().quote(order, SWAP_AMOUNT, takerData);
+        swapVM.asView().quote(order, address(tokenA), address(tokenB), SWAP_AMOUNT, takerData);
         vm.stopSnapshotGas();
     }
 
@@ -236,7 +236,7 @@ contract AMMGas is Test, OpcodesDebug {
         (ISwapVM.Order memory order, bytes memory takerData) = _createXYCSwapWithFeeOrder(true, true);
 
         vm.startSnapshotGas("XYCSwap_FlatFeeIn_swap_exactIn");
-        swapVM.swap(order, SWAP_AMOUNT, takerData);
+        swapVM.swap(order, address(tokenA), address(tokenB), SWAP_AMOUNT, takerData);
         vm.stopSnapshotGas();
     }
 
@@ -244,7 +244,7 @@ contract AMMGas is Test, OpcodesDebug {
         (ISwapVM.Order memory order, bytes memory takerData) = _createXYCSwapWithFeeOrder(false, true);
 
         vm.startSnapshotGas("XYCSwap_FlatFeeOut_quote_exactIn");
-        swapVM.asView().quote(order, SWAP_AMOUNT, takerData);
+        swapVM.asView().quote(order, address(tokenA), address(tokenB), SWAP_AMOUNT, takerData);
         vm.stopSnapshotGas();
     }
 
@@ -252,7 +252,7 @@ contract AMMGas is Test, OpcodesDebug {
         (ISwapVM.Order memory order, bytes memory takerData) = _createXYCSwapWithFeeOrder(false, true);
 
         vm.startSnapshotGas("XYCSwap_FlatFeeOut_swap_exactIn");
-        swapVM.swap(order, SWAP_AMOUNT, takerData);
+        swapVM.swap(order, address(tokenA), address(tokenB), SWAP_AMOUNT, takerData);
         vm.stopSnapshotGas();
     }
 
@@ -262,7 +262,7 @@ contract AMMGas is Test, OpcodesDebug {
         (ISwapVM.Order memory order, bytes memory takerData) = _createFullAMMOrder(true);
 
         vm.startSnapshotGas("FullAMM_quote_exactIn");
-        swapVM.asView().quote(order, SWAP_AMOUNT, takerData);
+        swapVM.asView().quote(order, address(tokenA), address(tokenB), SWAP_AMOUNT, takerData);
         vm.stopSnapshotGas();
     }
 
@@ -270,18 +270,21 @@ contract AMMGas is Test, OpcodesDebug {
         (ISwapVM.Order memory order, bytes memory takerData) = _createFullAMMOrder(true);
 
         vm.startSnapshotGas("FullAMM_swap_exactIn");
-        swapVM.swap(order, SWAP_AMOUNT, takerData);
+        swapVM.swap(order, address(tokenA), address(tokenB), SWAP_AMOUNT, takerData);
         vm.stopSnapshotGas();
     }
 
     // ==================== Helper Functions ====================
 
     function _createXYCSwapOrder(bool isExactIn) private view returns (ISwapVM.Order memory, bytes memory) {
-        Program program;
+        Program memory program = ProgramBuilder.init(_opcodes());
         bytes memory bytecode = bytes.concat(
-            program.build(Opcode.DynamicBalances,
-                BalancesArgsBuilder.build([uint256(BALANCE_A), BALANCE_B])),
-            program.build(Opcode.XYCSwap)
+            program.build(_dynamicBalancesXD,
+                BalancesArgsBuilder.build(
+                    dynamic([address(tokenA), address(tokenB)]),
+                    dynamic([BALANCE_A, BALANCE_B])
+                )),
+            program.build(_xycSwapXD)
         );
 
         ISwapVM.Order memory order = _createOrder(bytecode);
@@ -295,11 +298,14 @@ contract AMMGas is Test, OpcodesDebug {
         uint256 sqrtPmax = Math.sqrt(1.25e36);
         (uint256 balA, uint256 balB) = _concentrateBalances(BALANCE_A, sqrtPmin, sqrtPmax);
 
-        Program program;
+        Program memory program = ProgramBuilder.init(_opcodes());
         bytes memory bytecode = bytes.concat(
-            program.build(Opcode.DynamicBalances,
-                BalancesArgsBuilder.build([uint256(balA), balB])),
-            program.build(Opcode.XYCConcentrateSwap,
+            program.build(_dynamicBalancesXD,
+                BalancesArgsBuilder.build(
+                    dynamic([address(tokenA), address(tokenB)]),
+                    dynamic([balA, balB])
+                )),
+            program.build(_xycConcentrateGrowLiquidity2D,
                 XYCConcentrateArgsBuilder.build2D(sqrtPmin, sqrtPmax)
             )
         );
@@ -315,11 +321,14 @@ contract AMMGas is Test, OpcodesDebug {
         uint256 sqrtPmax = Math.sqrt(1.4e36);
         (uint256 balA, uint256 balB) = _concentrateBalances(BALANCE_A, sqrtPmin, sqrtPmax);
 
-        Program program;
+        Program memory program = ProgramBuilder.init(_opcodes());
         bytes memory bytecode = bytes.concat(
-            program.build(Opcode.DynamicBalances,
-                BalancesArgsBuilder.build([uint256(balA), balB])),
-            program.build(Opcode.XYCConcentrateSwap,
+            program.build(_dynamicBalancesXD,
+                BalancesArgsBuilder.build(
+                    dynamic([address(tokenA), address(tokenB)]),
+                    dynamic([balA, balB])
+                )),
+            program.build(_xycConcentrateGrowLiquidity2D,
                 XYCConcentrateArgsBuilder.build2D(sqrtPmin, sqrtPmax)
             )
         );
@@ -333,13 +342,16 @@ contract AMMGas is Test, OpcodesDebug {
     function _createDecayXYCSwapOrder(bool isExactIn) private view returns (ISwapVM.Order memory, bytes memory) {
         uint16 decayPeriod = 3600; // 1 hour decay period
 
-        Program program;
+        Program memory program = ProgramBuilder.init(_opcodes());
         bytes memory bytecode = bytes.concat(
-            program.build(Opcode.DynamicBalances,
-                BalancesArgsBuilder.build([uint256(BALANCE_A), BALANCE_B])),
-            program.build(Opcode.Decay,
+            program.build(_dynamicBalancesXD,
+                BalancesArgsBuilder.build(
+                    dynamic([address(tokenA), address(tokenB)]),
+                    dynamic([BALANCE_A, BALANCE_B])
+                )),
+            program.build(_decayXD,
                 DecayArgsBuilder.build(decayPeriod)),
-            program.build(Opcode.XYCSwap)
+            program.build(_xycSwapXD)
         );
 
         ISwapVM.Order memory order = _createOrder(bytecode);
@@ -354,13 +366,16 @@ contract AMMGas is Test, OpcodesDebug {
         (uint256 balA, uint256 balB) = _concentrateBalances(BALANCE_A, sqrtPmin, sqrtPmax);
         uint16 decayPeriod = 3600;
 
-        Program program;
+        Program memory program = ProgramBuilder.init(_opcodes());
         bytes memory bytecode = bytes.concat(
-            program.build(Opcode.DynamicBalances,
-                BalancesArgsBuilder.build([uint256(balA), balB])),
-            program.build(Opcode.Decay,
+            program.build(_dynamicBalancesXD,
+                BalancesArgsBuilder.build(
+                    dynamic([address(tokenA), address(tokenB)]),
+                    dynamic([balA, balB])
+                )),
+            program.build(_decayXD,
                 DecayArgsBuilder.build(decayPeriod)),
-            program.build(Opcode.XYCConcentrateSwap,
+            program.build(_xycConcentrateGrowLiquidity2D,
                 XYCConcentrateArgsBuilder.build2D(sqrtPmin, sqrtPmax)
             )
         );
@@ -374,17 +389,20 @@ contract AMMGas is Test, OpcodesDebug {
     function _createXYCSwapWithFeeOrder(bool isFeeIn, bool isExactIn) private view returns (ISwapVM.Order memory, bytes memory) {
         uint32 feeBps = 100; // 1%
 
-        Program program;
+        Program memory program = ProgramBuilder.init(_opcodes());
 
         bytes memory feeInstruction = isFeeIn ?
-            program.build(Opcode.FlatFeeAmountIn, FeeArgsBuilder.buildFlatFee(feeBps)) :
-            program.build(Opcode.FlatFeeAmountOut, FeeArgsBuilder.buildFlatFee(feeBps));
+            program.build(_flatFeeAmountInXD, FeeArgsBuilder.buildFlatFee(feeBps)) :
+            program.build(_flatFeeAmountOutXD, FeeArgsBuilder.buildFlatFee(feeBps));
 
         bytes memory bytecode = bytes.concat(
-            program.build(Opcode.DynamicBalances,
-                BalancesArgsBuilder.build([uint256(BALANCE_A), BALANCE_B])),
+            program.build(_dynamicBalancesXD,
+                BalancesArgsBuilder.build(
+                    dynamic([address(tokenA), address(tokenB)]),
+                    dynamic([BALANCE_A, BALANCE_B])
+                )),
             feeInstruction,
-            program.build(Opcode.XYCSwap)
+            program.build(_xycSwapXD)
         );
 
         ISwapVM.Order memory order = _createOrder(bytecode);
@@ -400,14 +418,17 @@ contract AMMGas is Test, OpcodesDebug {
         uint16 decayPeriod = 3600;
         uint32 feeBps = 30; // 0.3%
 
-        Program program;
+        Program memory program = ProgramBuilder.init(_opcodes());
         bytes memory bytecode = bytes.concat(
-            program.build(Opcode.DynamicBalances,
-                BalancesArgsBuilder.build([uint256(balA), balB])),
-            program.build(Opcode.Decay,
+            program.build(_dynamicBalancesXD,
+                BalancesArgsBuilder.build(
+                    dynamic([address(tokenA), address(tokenB)]),
+                    dynamic([balA, balB])
+                )),
+            program.build(_decayXD,
                 DecayArgsBuilder.build(decayPeriod)),
-            program.build(Opcode.FlatFeeAmountIn, FeeArgsBuilder.buildFlatFee(feeBps)),
-            program.build(Opcode.XYCConcentrateSwap,
+            program.build(_flatFeeAmountInXD, FeeArgsBuilder.buildFlatFee(feeBps)),
+            program.build(_xycConcentrateGrowLiquidity2D,
                 XYCConcentrateArgsBuilder.build2D(sqrtPmin, sqrtPmax)
             )
         );
@@ -421,8 +442,6 @@ contract AMMGas is Test, OpcodesDebug {
     function _createOrder(bytes memory program) private view returns (ISwapVM.Order memory) {
         return MakerTraitsLib.build(MakerTraitsLib.Args({
             maker: maker,
-            tokenA: address(tokenA),
-            tokenB: address(tokenB),
             shouldUnwrapWeth: false,
             useAquaInsteadOfSignature: false,
             allowZeroAmountIn: false,
@@ -461,7 +480,6 @@ contract AMMGas is Test, OpcodesDebug {
             isStrictThresholdAmount: false,
             isFirstTransferFromTaker: false,
             useTransferFromAndAquaPush: false,
-            isAToB: true,
             threshold: thresholdData,
             to: address(this),
             deadline: 0,

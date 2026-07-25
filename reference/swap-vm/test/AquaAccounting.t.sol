@@ -25,7 +25,7 @@ import { Decay, DecayArgsBuilder } from "../src/instructions/Decay.sol";
 import { PeggedSwap, PeggedSwapArgsBuilder } from "../src/instructions/PeggedSwap.sol";
 import { PeggedSwapMath } from "../src/libs/PeggedSwapMath.sol";
 
-import { Program, ProgramBuilder, Opcode } from "./utils/ProgramBuilder.sol";
+import { Program, ProgramBuilder } from "./utils/ProgramBuilder.sol";
 import { dynamic } from "./utils/Dynamic.sol";
 
 /**
@@ -62,9 +62,8 @@ contract AquaAccounting is Test, AquaOpcodesDebug {
     constructor() AquaOpcodesDebug(address(aqua)) {}
 
     function setUp() public {
-        tokenA = new TokenMock("Token I", "TKI");
-        tokenB = new TokenMock("Token J", "TKJ");
-        if (tokenA > tokenB) (tokenA, tokenB) = (tokenB, tokenA);
+        tokenA = new TokenMock("Token A", "TKA");
+        tokenB = new TokenMock("Token B", "TKB");
 
         swapVM = new AquaSwapVMRouter(address(aqua), address(0), address(this), "SwapVM", "1.0.0");
 
@@ -189,30 +188,30 @@ contract AquaAccounting is Test, AquaOpcodesDebug {
         uint32 flatFeeInBps,
         bool includeConcentrate
     ) internal view returns (bytes memory) {
-        Program p;
+        Program memory p = ProgramBuilder.init(_opcodes());
 
         bytes memory protocolFeeCode = protocolFeeBps > 0
-            ? p.build(Opcode.AquaProtocolFeeAmountIn, FeeArgsBuilder.buildProtocolFee(protocolFeeBps, protocolFeeRecipient))
+            ? p.build(Fee._aquaProtocolFeeAmountInXD, FeeArgsBuilder.buildProtocolFee(protocolFeeBps, protocolFeeRecipient))
             : bytes("");
 
         bytes memory flatFeeCode = flatFeeInBps > 0
-            ? p.build(Opcode.FlatFeeAmountIn, FeeArgsBuilder.buildFlatFee(flatFeeInBps))
+            ? p.build(Fee._flatFeeAmountInXD, FeeArgsBuilder.buildFlatFee(flatFeeInBps))
             : bytes("");
 
         bytes memory concentrateCode = includeConcentrate
-            ? p.build(Opcode.XYCConcentrateSwap,
+            ? p.build(XYCConcentrate._xycConcentrateGrowLiquidity2D,
                      defaultConcentrateArgs())
             : bytes("");
 
         bytes memory swapCode = includeConcentrate
             ? concentrateCode
-            : p.build(Opcode.XYCSwap);
+            : p.build(XYCSwap._xycSwapXD);
 
         return bytes.concat(
             protocolFeeCode,
             flatFeeCode,
             swapCode,
-            p.build(Opcode.Salt, abi.encodePacked(vm.randomUint()))
+            p.build(Controls._salt, abi.encodePacked(vm.randomUint()))
         );
     }
 
@@ -220,22 +219,22 @@ contract AquaAccounting is Test, AquaOpcodesDebug {
         uint32 protocolFeeBps,
         uint32 flatFeeInBps
     ) internal view returns (bytes memory) {
-        Program p;
+        Program memory p = ProgramBuilder.init(_opcodes());
 
         bytes memory protocolFeeCode = protocolFeeBps > 0
-            ? p.build(Opcode.AquaProtocolFeeAmountIn, FeeArgsBuilder.buildProtocolFee(protocolFeeBps, protocolFeeRecipient))
+            ? p.build(Fee._aquaProtocolFeeAmountInXD, FeeArgsBuilder.buildProtocolFee(protocolFeeBps, protocolFeeRecipient))
             : bytes("");
 
         bytes memory flatFeeCode = flatFeeInBps > 0
-            ? p.build(Opcode.FlatFeeAmountIn, FeeArgsBuilder.buildFlatFee(flatFeeInBps))
+            ? p.build(Fee._flatFeeAmountInXD, FeeArgsBuilder.buildFlatFee(flatFeeInBps))
             : bytes("");
 
         return bytes.concat(
             protocolFeeCode,
             flatFeeCode,
-            p.build(Opcode.XYCConcentrateSwap,
+            p.build(XYCConcentrate._xycConcentrateGrowLiquidity2D,
                    defaultConcentrateArgs()),
-            p.build(Opcode.Salt, abi.encodePacked(vm.randomUint()))
+            p.build(Controls._salt, abi.encodePacked(vm.randomUint()))
         );
     }
 
@@ -244,23 +243,23 @@ contract AquaAccounting is Test, AquaOpcodesDebug {
         uint16 decayPeriod,
         uint32 flatFeeInBps
     ) internal view returns (bytes memory) {
-        Program p;
+        Program memory p = ProgramBuilder.init(_opcodes());
 
         bytes memory protocolFeeCode = protocolFeeBps > 0
-            ? p.build(Opcode.AquaProtocolFeeAmountIn, FeeArgsBuilder.buildProtocolFee(protocolFeeBps, protocolFeeRecipient))
+            ? p.build(Fee._aquaProtocolFeeAmountInXD, FeeArgsBuilder.buildProtocolFee(protocolFeeBps, protocolFeeRecipient))
             : bytes("");
 
         bytes memory flatFeeCode = flatFeeInBps > 0
-            ? p.build(Opcode.FlatFeeAmountIn, FeeArgsBuilder.buildFlatFee(flatFeeInBps))
+            ? p.build(Fee._flatFeeAmountInXD, FeeArgsBuilder.buildFlatFee(flatFeeInBps))
             : bytes("");
 
         return bytes.concat(
             protocolFeeCode,
-            p.build(Opcode.Decay, DecayArgsBuilder.build(decayPeriod)),
+            p.build(Decay._decayXD, DecayArgsBuilder.build(decayPeriod)),
             flatFeeCode,
-            p.build(Opcode.XYCConcentrateSwap,
+            p.build(XYCConcentrate._xycConcentrateGrowLiquidity2D,
                    defaultConcentrateArgs()),
-            p.build(Opcode.Salt, abi.encodePacked(vm.randomUint()))
+            p.build(Controls._salt, abi.encodePacked(vm.randomUint()))
         );
     }
 
@@ -270,22 +269,22 @@ contract AquaAccounting is Test, AquaOpcodesDebug {
         uint32 flatFeeInBps,
         PeggedSwapArgsBuilder.Args memory peggedArgs
     ) internal view returns (bytes memory) {
-        Program p;
+        Program memory p = ProgramBuilder.init(_opcodes());
 
         bytes memory protocolFeeCode = protocolFeeBps > 0
-            ? p.build(Opcode.AquaProtocolFeeAmountIn, FeeArgsBuilder.buildProtocolFee(protocolFeeBps, protocolFeeRecipient))
+            ? p.build(Fee._aquaProtocolFeeAmountInXD, FeeArgsBuilder.buildProtocolFee(protocolFeeBps, protocolFeeRecipient))
             : bytes("");
 
         bytes memory flatFeeCode = flatFeeInBps > 0
-            ? p.build(Opcode.FlatFeeAmountIn, FeeArgsBuilder.buildFlatFee(flatFeeInBps))
+            ? p.build(Fee._flatFeeAmountInXD, FeeArgsBuilder.buildFlatFee(flatFeeInBps))
             : bytes("");
 
         return bytes.concat(
             protocolFeeCode,
-            p.build(Opcode.Decay, DecayArgsBuilder.build(decayPeriod)),
+            p.build(Decay._decayXD, DecayArgsBuilder.build(decayPeriod)),
             flatFeeCode,
-            p.build(Opcode.PeggedSwap, PeggedSwapArgsBuilder.build(peggedArgs)),
-            p.build(Opcode.Salt, abi.encodePacked(vm.randomUint()))
+            p.build(PeggedSwap._peggedSwapGrowPriceRange2D, PeggedSwapArgsBuilder.build(peggedArgs)),
+            p.build(Controls._salt, abi.encodePacked(vm.randomUint()))
         );
     }
 
@@ -294,30 +293,28 @@ contract AquaAccounting is Test, AquaOpcodesDebug {
         uint16 decayPeriod,
         uint32 flatFeeInBps
     ) internal view returns (bytes memory) {
-        Program p;
+        Program memory p = ProgramBuilder.init(_opcodes());
 
         bytes memory protocolFeeCode = protocolFeeBps > 0
-            ? p.build(Opcode.AquaProtocolFeeAmountIn, FeeArgsBuilder.buildProtocolFee(protocolFeeBps, protocolFeeRecipient))
+            ? p.build(Fee._aquaProtocolFeeAmountInXD, FeeArgsBuilder.buildProtocolFee(protocolFeeBps, protocolFeeRecipient))
             : bytes("");
 
         bytes memory flatFeeCode = flatFeeInBps > 0
-            ? p.build(Opcode.FlatFeeAmountIn, FeeArgsBuilder.buildFlatFee(flatFeeInBps))
+            ? p.build(Fee._flatFeeAmountInXD, FeeArgsBuilder.buildFlatFee(flatFeeInBps))
             : bytes("");
 
         return bytes.concat(
             protocolFeeCode,
-            p.build(Opcode.Decay, DecayArgsBuilder.build(decayPeriod)),
+            p.build(Decay._decayXD, DecayArgsBuilder.build(decayPeriod)),
             flatFeeCode,
-            p.build(Opcode.XYCSwap),
-            p.build(Opcode.Salt, abi.encodePacked(vm.randomUint()))
+            p.build(XYCSwap._xycSwapXD),
+            p.build(Controls._salt, abi.encodePacked(vm.randomUint()))
         );
     }
 
     function createOrder(bytes memory programBytes) internal view returns (ISwapVM.Order memory) {
         return MakerTraitsLib.build(MakerTraitsLib.Args({
             maker: maker,
-            tokenA: address(tokenA),
-            tokenB: address(tokenB),
             shouldUnwrapWeth: false,
             useAquaInsteadOfSignature: true,
             allowZeroAmountIn: false,
@@ -378,7 +375,6 @@ contract AquaAccounting is Test, AquaOpcodesDebug {
             isStrictThresholdAmount: false,
             isFirstTransferFromTaker: false,
             useTransferFromAndAquaPush: false,
-            isAToB: zeroForOne,
             threshold: "",
             to: address(0),
             deadline: 0,
@@ -395,7 +391,7 @@ contract AquaAccounting is Test, AquaOpcodesDebug {
         }));
 
         TokenMock(tokenIn).mint(address(taker), amount * 2);
-        return taker.swap(order, amount, takerData);
+        return taker.swap(order, tokenIn, tokenOut, amount, takerData);
     }
 
     // ===== TEST GROUP 1: XYCSwap Tests =====

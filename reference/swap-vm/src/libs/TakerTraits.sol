@@ -56,7 +56,6 @@ library TakerTraitsLib {
         bool isStrictThresholdAmount;
         bool isFirstTransferFromTaker;
         bool useTransferFromAndAquaPush;
-        bool isAToB;
         bytes threshold;
         address to;
         uint40 deadline;
@@ -98,7 +97,6 @@ library TakerTraitsLib {
     uint16 constant internal IS_STRICT_THRESHOLD_BIT_FLAG = 0x0010;
     uint16 constant internal IS_FIRST_TRANSFER_FROM_TAKER_BIT_FLAG = 0x0020;
     uint16 constant internal USE_TRANSFER_FROM_AND_AQUA_PUSH_FLAG = 0x0040;
-    uint16 constant internal IS_A_TO_B_BIT_FLAG = 0x0080;
 
     /// @notice Build taker traits and data from arguments
     /// @dev Packs traits, hooks, callbacks, and signature into single bytes
@@ -117,7 +115,7 @@ library TakerTraitsLib {
         uint256 index0 = args.threshold.length;
         uint256 index1 = (index0 + (args.to != address(0) && args.to != args.taker ? 20 : 0));
         uint256 index2 = (index1 + (args.deadline != 0 ? 5 : 0));
-        uint256 index3 = (index2 + args.preTransferInHookData.length).toUint16();
+        uint256 index3 = (index2 + args.preTransferInHookData.length.toUint16());
         uint256 index4 = (index3 + args.postTransferInHookData.length).toUint16();
         uint256 index5 = (index4 + args.preTransferOutHookData.length).toUint16();
         uint256 index6 = (index5 + args.postTransferOutHookData.length).toUint16();
@@ -146,8 +144,7 @@ library TakerTraitsLib {
             (args.isFirstTransferFromTaker ? IS_FIRST_TRANSFER_FROM_TAKER_BIT_FLAG : 0) |
             (args.useTransferFromAndAquaPush ? USE_TRANSFER_FROM_AND_AQUA_PUSH_FLAG : 0) |
             (args.hasPreTransferInCallback ? HAS_PRE_TRANSFER_IN_CALLBACK_BIT_FLAG : 0) |
-            (args.hasPreTransferOutCallback ? HAS_PRE_TRANSFER_OUT_CALLBACK_BIT_FLAG : 0) |
-            (args.isAToB ? IS_A_TO_B_BIT_FLAG : 0),
+            (args.hasPreTransferOutCallback ? HAS_PRE_TRANSFER_OUT_CALLBACK_BIT_FLAG : 0),
             args.threshold,
             (args.to != address(0) && args.to != args.taker ? abi.encodePacked(args.to) : bytes("")),
             (args.deadline != 0 ? abi.encodePacked(args.deadline) : bytes("")),
@@ -179,7 +176,7 @@ library TakerTraitsLib {
         require(takerDeadline == 0 || block.timestamp <= takerDeadline, TakerTraitsDeadlineExpired());
 
         if (traits.isExactIn()) {
-            require(takerAmount >= amountIn, TakerTraitsTakerAmountInMismatch(takerAmount, amountIn));
+            require(takerAmount == amountIn, TakerTraitsTakerAmountInMismatch(takerAmount, amountIn));
             (bool hasThreshold, uint256 thresholdAmount) = traits.threshold(takerData);
             if (hasThreshold) {
                 if (traits.isStrictThresholdAmount()) {
@@ -189,7 +186,7 @@ library TakerTraitsLib {
                 }
             }
         } else {
-            require(takerAmount >= amountOut, TakerTraitsTakerAmountOutMismatch(takerAmount, amountOut));
+            require(takerAmount == amountOut, TakerTraitsTakerAmountOutMismatch(takerAmount, amountOut));
             (bool hasThreshold, uint256 thresholdAmount) = traits.threshold(takerData);
             if (hasThreshold) {
                 if (traits.isStrictThresholdAmount()) {
@@ -221,16 +218,12 @@ library TakerTraitsLib {
         return (TakerTraits.unwrap(traits) & IS_STRICT_THRESHOLD_BIT_FLAG) != 0;
     }
 
-    function isFirstTransferFromTaker(TakerTraits traits) internal pure returns (bool) {
-        return (TakerTraits.unwrap(traits) & IS_FIRST_TRANSFER_FROM_TAKER_BIT_FLAG) != 0;
-    }
-
     function useTransferFromAndAquaPush(TakerTraits traits) internal pure returns (bool) {
         return (TakerTraits.unwrap(traits) & USE_TRANSFER_FROM_AND_AQUA_PUSH_FLAG) != 0;
     }
 
-    function isAToB(TakerTraits traits) internal pure returns (bool) {
-        return (TakerTraits.unwrap(traits) & IS_A_TO_B_BIT_FLAG) != 0;
+    function isFirstTransferFromTaker(TakerTraits traits) internal pure returns (bool) {
+        return (TakerTraits.unwrap(traits) & IS_FIRST_TRANSFER_FROM_TAKER_BIT_FLAG) != 0;
     }
 
     function threshold(TakerTraits traits, bytes calldata data) internal pure returns (bool hasThreshold, uint256 thresholdAmount) {

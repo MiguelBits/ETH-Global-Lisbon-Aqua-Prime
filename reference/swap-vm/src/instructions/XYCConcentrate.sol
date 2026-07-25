@@ -16,6 +16,8 @@ library XYCConcentrateArgsBuilder {
     using Calldata for bytes;
 
     error ConcentrateInvalidPriceBounds(uint256 sqrtPriceMin, uint256 sqrtPriceMax);
+    error ConcentrateMissingSqrtPriceMin();
+    error ConcentrateMissingSqrtPriceMax();
 
     /// @notice Build args for the 2D price-bounds concentrate instruction
     /// @param sqrtPriceMin sqrt(P_min) in 1e18 fixed-point, where P = tokenGt/tokenLt
@@ -26,8 +28,8 @@ library XYCConcentrateArgsBuilder {
     }
 
     function parse2D(bytes calldata args) internal pure returns (uint256 sqrtPriceMin, uint256 sqrtPriceMax) {
-        sqrtPriceMin = uint256(bytes32(args));
-        sqrtPriceMax = uint256(bytes32(args.slice(32)));
+        sqrtPriceMin = uint256(bytes32(args.slice(0, 32, ConcentrateMissingSqrtPriceMin.selector)));
+        sqrtPriceMax = uint256(bytes32(args.slice(32, 64, ConcentrateMissingSqrtPriceMax.selector)));
     }
 
     /// @notice Compute the implied spot price and liquidity from real balances and price bounds
@@ -142,16 +144,12 @@ contract XYCConcentrate {
 
         if (ctx.query.isExactIn) {
             require(ctx.swap.amountOut == 0, ConcentrateRecomputeDetected(ctx.swap.amountIn, ctx.swap.amountOut));
-            uint256 out = (ctx.swap.amountIn * virtualBalanceOut) / (virtualBalanceIn + ctx.swap.amountIn);
-            if (out > ctx.swap.balanceOut) {
-                out = ctx.swap.balanceOut;
-                ctx.swap.amountIn = Math.ceilDiv(out * virtualBalanceIn, virtualBalanceOut - out);
-            }
-            ctx.swap.amountOut = out;
+            ctx.swap.amountOut = (
+                (ctx.swap.amountIn * virtualBalanceOut) /
+                (virtualBalanceIn + ctx.swap.amountIn)
+            );
         } else {
             require(ctx.swap.amountIn == 0, ConcentrateRecomputeDetected(ctx.swap.amountIn, ctx.swap.amountOut));
-            if (ctx.swap.amountOut > ctx.swap.balanceOut)
-                ctx.swap.amountOut = ctx.swap.balanceOut;
             ctx.swap.amountIn = Math.ceilDiv(
                 ctx.swap.amountOut * virtualBalanceIn,
                 (virtualBalanceOut - ctx.swap.amountOut)

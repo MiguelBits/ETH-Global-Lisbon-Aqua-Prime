@@ -17,10 +17,11 @@ import { SwapVMRouter } from "../src/routers/SwapVMRouter.sol";
 import { MakerTraitsLib } from "../src/libs/MakerTraits.sol";
 import { TakerTraitsLib } from "../src/libs/TakerTraits.sol";
 import { OpcodesDebug } from "../src/opcodes/OpcodesDebug.sol";
-import { Program, ProgramBuilder, Opcode } from "./utils/ProgramBuilder.sol";
+import { Program, ProgramBuilder } from "./utils/ProgramBuilder.sol";
 import { BalancesArgsBuilder } from "../src/instructions/Balances.sol";
 import { LimitSwapArgsBuilder } from "../src/instructions/LimitSwap.sol";
 import { DutchAuctionArgsBuilder } from "../src/instructions/DutchAuction.sol";
+import { dynamic } from "./utils/Dynamic.sol";
 
 /**
  * @title DutchAuctionTest
@@ -46,9 +47,8 @@ contract DutchAuctionTest is Test, OpcodesDebug {
         taker = address(this);
         swapVM = new SwapVMRouter(address(aqua), address(0), address(this), "SwapVM", "1.0.0");
 
-        tokenA = new TokenMock("Token I", "TKI");
-        tokenB = new TokenMock("Token J", "TKJ");
-        if (tokenA > tokenB) (tokenA, tokenB) = (tokenB, tokenA);
+        tokenA = new TokenMock("Token A", "TKA");
+        tokenB = new TokenMock("Token B", "TKB");
 
         // Setup tokens and approvals for maker
         tokenA.mint(maker, 1e30);
@@ -99,13 +99,16 @@ contract DutchAuctionTest is Test, OpcodesDebug {
         uint16 duration = 300; // 5 minutes
         uint64 decayFactor = 0.99e18;
 
-        Program program;
+        Program memory program = ProgramBuilder.init(_opcodes());
         bytes memory bytecode = bytes.concat(
-            program.build(Opcode.StaticBalances,
-                BalancesArgsBuilder.build([uint256(100e18), uint256(200e18)])),
-            program.build(Opcode.DutchAuctionBalanceOut,
+            program.build(_staticBalancesXD,
+                BalancesArgsBuilder.build(
+                    dynamic([address(tokenA), address(tokenB)]),
+                    dynamic([uint256(100e18), uint256(200e18)])
+                )),
+            program.build(_dutchAuctionBalanceOut1D,
                 DutchAuctionArgsBuilder.build(startTime, duration, decayFactor)),
-            program.build(Opcode.LimitSwap,
+            program.build(_limitSwap1D,
                 LimitSwapArgsBuilder.build(address(tokenA), address(tokenB)))
         );
 
@@ -120,6 +123,8 @@ contract DutchAuctionTest is Test, OpcodesDebug {
         vm.expectRevert(abi.encodeWithSelector(DutchAuctionExpired.selector, block.timestamp, startTime + duration)); // Dutch auction should revert when expired
         swapVM.swap(
             order,
+            address(tokenA),
+            address(tokenB),
             10e18,
             exactInData
         );
@@ -133,13 +138,16 @@ contract DutchAuctionTest is Test, OpcodesDebug {
         uint16 duration = 300; // 5 minutes
         uint64 decayFactor = 0.99e18;
 
-        Program program;
+        Program memory program = ProgramBuilder.init(_opcodes());
         bytes memory bytecode = bytes.concat(
-            program.build(Opcode.StaticBalances,
-                BalancesArgsBuilder.build([uint256(100e18), uint256(200e18)])),
-            program.build(Opcode.DutchAuctionBalanceIn,
+            program.build(_staticBalancesXD,
+                BalancesArgsBuilder.build(
+                    dynamic([address(tokenA), address(tokenB)]),
+                    dynamic([uint256(100e18), uint256(200e18)])
+                )),
+            program.build(_dutchAuctionBalanceIn1D,
                 DutchAuctionArgsBuilder.build(startTime, duration, decayFactor)),
-            program.build(Opcode.LimitSwap,
+            program.build(_limitSwap1D,
                 LimitSwapArgsBuilder.build(address(tokenA), address(tokenB)))
         );
 
@@ -154,6 +162,8 @@ contract DutchAuctionTest is Test, OpcodesDebug {
         vm.expectRevert(abi.encodeWithSelector(DutchAuctionExpired.selector, block.timestamp, startTime + duration)); // Dutch auction should revert when expired
         swapVM.swap(
             order,
+            address(tokenA),
+            address(tokenB),
             10e18,
             exactInData
         );
@@ -166,15 +176,18 @@ contract DutchAuctionTest is Test, OpcodesDebug {
         uint40 startTime = uint40(block.timestamp);
         uint16 duration = 300;
 
-        Program program;
+        Program memory program = ProgramBuilder.init(_opcodes());
         bytes memory bytecode = bytes.concat(
-            program.build(Opcode.StaticBalances,
-                BalancesArgsBuilder.build([uint256(1e30), uint256(2e30)])),
-            useIn ? program.build(Opcode.DutchAuctionBalanceIn,
+            program.build(_staticBalancesXD,
+                BalancesArgsBuilder.build(
+                    dynamic([address(tokenA), address(tokenB)]),
+                    dynamic([uint256(1e30), uint256(2e30)])
+                )),
+            useIn ? program.build(_dutchAuctionBalanceIn1D,
                 DutchAuctionArgsBuilder.build(startTime, duration, decayFactor)) :
-                program.build(Opcode.DutchAuctionBalanceOut,
+                program.build(_dutchAuctionBalanceOut1D,
                 DutchAuctionArgsBuilder.build(startTime, duration, decayFactor)),
-            program.build(Opcode.LimitSwap,
+            program.build(_limitSwap1D,
                 LimitSwapArgsBuilder.build(address(tokenA), address(tokenB)))
         );
 
@@ -203,6 +216,8 @@ contract DutchAuctionTest is Test, OpcodesDebug {
 
             (uint256 actualIn, uint256 actualOut,) = swapVM.swap(
                 order,
+                address(tokenA),
+                address(tokenB),
                 amountIn,
                 exactInData
             );
@@ -241,8 +256,6 @@ contract DutchAuctionTest is Test, OpcodesDebug {
     function _createOrder(bytes memory program) private view returns (ISwapVM.Order memory) {
         return MakerTraitsLib.build(MakerTraitsLib.Args({
             maker: maker,
-            tokenA: address(tokenA),
-            tokenB: address(tokenB),
             shouldUnwrapWeth: false,
             useAquaInsteadOfSignature: false,
             allowZeroAmountIn: false,
@@ -281,7 +294,6 @@ contract DutchAuctionTest is Test, OpcodesDebug {
             isStrictThresholdAmount: false,
             isFirstTransferFromTaker: false,
             useTransferFromAndAquaPush: false,
-            isAToB: true,
             threshold: thresholdData,
             to: address(this),
             deadline: 0,

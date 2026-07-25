@@ -15,10 +15,11 @@ import { SwapVMRouter } from "../../src/routers/SwapVMRouter.sol";
 import { MakerTraitsLib } from "../../src/libs/MakerTraits.sol";
 import { TakerTraitsLib } from "../../src/libs/TakerTraits.sol";
 import { OpcodesDebug } from "../../src/opcodes/OpcodesDebug.sol";
-import { Program, ProgramBuilder, Opcode } from "../utils/ProgramBuilder.sol";
+import { Program, ProgramBuilder } from "../utils/ProgramBuilder.sol";
 import { BalancesArgsBuilder } from "../../src/instructions/Balances.sol";
 import { FeeArgsBuilder } from "../../src/instructions/Fee.sol";
 import { FeeArgsBuilderExperimental } from "../../src/instructions/FeeExperimental.sol";
+import { dynamic } from "../utils/Dynamic.sol";
 
 import { ProtocolFeeProviderMock } from "../../mocks/ProtocolFeeProviderMock.sol";
 
@@ -106,9 +107,8 @@ contract XYCFeesInvariants is Test, OpcodesDebug, CoreInvariants {
         taker = address(this);
         swapVM = new SwapVMRouter(address(aqua), address(0), address(this), "SwapVM", "1.0.0");
 
-        tokenA = new TokenMock("Token I", "TKI");
-        tokenB = new TokenMock("Token J", "TKJ");
-        if (tokenA > tokenB) (tokenA, tokenB) = (tokenB, tokenA);
+        tokenA = new TokenMock("Token A", "TKA");
+        tokenB = new TokenMock("Token B", "TKB");
 
         // Setup tokens and approvals for maker (mint max for huge liquidity tests)
         tokenA.mint(maker, type(uint128).max);
@@ -159,6 +159,8 @@ contract XYCFeesInvariants is Test, OpcodesDebug, CoreInvariants {
         // Execute the swap
         (uint256 actualIn, uint256 actualOut,) = _swapVM.swap(
             order,
+            tokenIn,
+            tokenOut,
             amount,
             takerData
         );
@@ -179,37 +181,40 @@ contract XYCFeesInvariants is Test, OpcodesDebug, CoreInvariants {
         uint256 _balanceB,
         FeeConfig memory fees
     ) internal view returns (bytes memory) {
-        Program p;
+        Program memory program = ProgramBuilder.init(_opcodes());
 
         return bytes.concat(
             // Protocol fees BEFORE balances
-            (fees.protocolFeeOutBps > 0) ? p.build(Opcode.ProtocolFeeAmountOut,
+            (fees.protocolFeeOutBps > 0) ? program.build(_protocolFeeAmountOutXD,
                 FeeArgsBuilder.buildProtocolFee(fees.protocolFeeOutBps, fees.feeRecipient)) : bytes(""),
 
             // Dynamic protocol fee on amountIn BEFORE balances
-            (fees.dynamicFeeProvider != address(0)) ? p.build(Opcode.DynamicProtocolFeeAmountIn,
+            (fees.dynamicFeeProvider != address(0)) ? program.build(_dynamicProtocolFeeAmountInXD,
                 FeeArgsBuilder.buildDynamicProtocolFee(fees.dynamicFeeProvider)) : bytes(""),
 
             // Protocol fee on amountIn BEFORE balances
-            (fees.protocolFeeInBps > 0) ? p.build(Opcode.ProtocolFeeAmountIn,
+            (fees.protocolFeeInBps > 0) ? program.build(_protocolFeeAmountInXD,
                 FeeArgsBuilder.buildProtocolFee(fees.protocolFeeInBps, fees.feeRecipient)) : bytes(""),
 
             // Balances
-            p.build(Opcode.DynamicBalances,
-                BalancesArgsBuilder.build([_balanceA, _balanceB])),
+            program.build(_dynamicBalancesXD,
+                BalancesArgsBuilder.build(
+                    dynamic([address(tokenA), address(tokenB)]),
+                    dynamic([_balanceA, _balanceB])
+                )),
 
             // Regular fees AFTER balances (0 = disabled)
-            (fees.flatFeeInBps > 0) ? p.build(Opcode.FlatFeeAmountIn,
+            (fees.flatFeeInBps > 0) ? program.build(_flatFeeAmountInXD,
                 FeeArgsBuilder.buildFlatFee(fees.flatFeeInBps)) : bytes(""),
-            (fees.flatFeeOutBps > 0) ? p.build(Opcode.FlatFeeAmountOut,
+            (fees.flatFeeOutBps > 0) ? program.build(_flatFeeAmountOutXD,
                 FeeArgsBuilder.buildFlatFee(fees.flatFeeOutBps)) : bytes(""),
-            (fees.progressiveFeeInBps > 0) ? p.build(Opcode.ProgressiveFeeIn,
+            (fees.progressiveFeeInBps > 0) ? program.build(_progressiveFeeInXD,
                 FeeArgsBuilderExperimental.buildProgressiveFee(fees.progressiveFeeInBps)) : bytes(""),
-            (fees.progressiveFeeOutBps > 0) ? p.build(Opcode.ProgressiveFeeOut,
+            (fees.progressiveFeeOutBps > 0) ? program.build(_progressiveFeeOutXD,
                 FeeArgsBuilderExperimental.buildProgressiveFee(fees.progressiveFeeOutBps)) : bytes(""),
 
             // Swap instruction
-            p.build(Opcode.XYCSwap)
+            program.build(_xycSwapXD)
         );
     }
 
@@ -460,8 +465,6 @@ contract XYCFeesInvariants is Test, OpcodesDebug, CoreInvariants {
     function _createOrder(bytes memory program) internal view returns (ISwapVM.Order memory) {
         return MakerTraitsLib.build(MakerTraitsLib.Args({
             maker: maker,
-            tokenA: address(tokenA),
-            tokenB: address(tokenB),
             shouldUnwrapWeth: false,
             useAquaInsteadOfSignature: false,
             allowZeroAmountIn: false,
@@ -500,7 +503,6 @@ contract XYCFeesInvariants is Test, OpcodesDebug, CoreInvariants {
             isStrictThresholdAmount: false,
             isFirstTransferFromTaker: false,
             useTransferFromAndAquaPush: false,
-            isAToB: true,
             threshold: thresholdData,
             to: address(this),
             deadline: 0,

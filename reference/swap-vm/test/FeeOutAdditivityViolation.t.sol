@@ -16,7 +16,7 @@ import { SwapVMRouter } from "../src/routers/SwapVMRouter.sol";
 import { MakerTraitsLib } from "../src/libs/MakerTraits.sol";
 import { TakerTraitsLib } from "../src/libs/TakerTraits.sol";
 import { OpcodesDebug } from "../src/opcodes/OpcodesDebug.sol";
-import { Program, ProgramBuilder, Opcode } from "./utils/ProgramBuilder.sol";
+import { Program, ProgramBuilder } from "./utils/ProgramBuilder.sol";
 import { BalancesArgsBuilder } from "../src/instructions/Balances.sol";
 import { FeeArgsBuilder } from "../src/instructions/Fee.sol";
 import { dynamic } from "./utils/Dynamic.sol";
@@ -54,9 +54,8 @@ contract FeeOutAdditivityViolation is Test, OpcodesDebug {
         taker = address(this);
         swapVM = new SwapVMRouter(address(aqua), address(0), address(this), "SwapVM", "1.0.0");
 
-        tokenA = new TokenMock("Token I", "TKI");
-        tokenB = new TokenMock("Token J", "TKJ");
-        if (tokenA > tokenB) (tokenA, tokenB) = (tokenB, tokenA);
+        tokenA = new TokenMock("Token A", "TKA");
+        tokenB = new TokenMock("Token B", "TKB");
 
         // Setup tokens and approvals for maker
         tokenA.mint(maker, 100000e18);
@@ -350,23 +349,29 @@ contract FeeOutAdditivityViolation is Test, OpcodesDebug {
     }
 
     function _createOrderWithFlatFeeOut() private view returns (ISwapVM.Order memory) {
-        Program program;
+        Program memory program = ProgramBuilder.init(_opcodes());
         bytes memory bytecode = bytes.concat(
-            program.build(Opcode.DynamicBalances,
-                BalancesArgsBuilder.build([uint256(BALANCE), BALANCE])),
-            program.build(Opcode.FlatFeeAmountOut, FeeArgsBuilder.buildFlatFee(FEE_BPS)),
-            program.build(Opcode.XYCSwap)
+            program.build(_dynamicBalancesXD,
+                BalancesArgsBuilder.build(
+                    dynamic([address(tokenA), address(tokenB)]),
+                    dynamic([BALANCE, BALANCE])
+                )),
+            program.build(_flatFeeAmountOutXD, FeeArgsBuilder.buildFlatFee(FEE_BPS)),
+            program.build(_xycSwapXD)
         );
         return _createOrder(bytecode);
     }
 
     function _createOrderWithFlatFeeIn() private view returns (ISwapVM.Order memory) {
-        Program program;
+        Program memory program = ProgramBuilder.init(_opcodes());
         bytes memory bytecode = bytes.concat(
-            program.build(Opcode.DynamicBalances,
-                BalancesArgsBuilder.build([uint256(BALANCE), BALANCE])),
-            program.build(Opcode.FlatFeeAmountIn, FeeArgsBuilder.buildFlatFee(FEE_BPS)),
-            program.build(Opcode.XYCSwap)
+            program.build(_dynamicBalancesXD,
+                BalancesArgsBuilder.build(
+                    dynamic([address(tokenA), address(tokenB)]),
+                    dynamic([BALANCE, BALANCE])
+                )),
+            program.build(_flatFeeAmountInXD, FeeArgsBuilder.buildFlatFee(FEE_BPS)),
+            program.build(_xycSwapXD)
         );
         return _createOrder(bytecode);
     }
@@ -374,8 +379,6 @@ contract FeeOutAdditivityViolation is Test, OpcodesDebug {
     function _createOrder(bytes memory program) private view returns (ISwapVM.Order memory) {
         return MakerTraitsLib.build(MakerTraitsLib.Args({
             maker: maker,
-            tokenA: address(tokenA),
-            tokenB: address(tokenB),
             shouldUnwrapWeth: false,
             useAquaInsteadOfSignature: false,
             allowZeroAmountIn: false,
@@ -414,7 +417,6 @@ contract FeeOutAdditivityViolation is Test, OpcodesDebug {
             isStrictThresholdAmount: false,
             isFirstTransferFromTaker: false,
             useTransferFromAndAquaPush: false,
-            isAToB: true,
             threshold: thresholdData,
             to: address(this),
             deadline: 0,
@@ -440,6 +442,8 @@ contract FeeOutAdditivityViolation is Test, OpcodesDebug {
     ) private view returns (uint256 amountIn, uint256 amountOut) {
         (amountIn, amountOut,) = swapVM.asView().quote(
             order,
+            address(tokenA),
+            address(tokenB),
             amount,
             takerData
         );
@@ -452,6 +456,8 @@ contract FeeOutAdditivityViolation is Test, OpcodesDebug {
     ) private {
         (,uint256 amountOut,) = swapVM.swap(
             order,
+            address(tokenA),
+            address(tokenB),
             amount,
             takerData
         );

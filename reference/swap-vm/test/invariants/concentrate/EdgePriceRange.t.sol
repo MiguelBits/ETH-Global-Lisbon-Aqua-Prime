@@ -60,13 +60,13 @@ contract EdgePriceRange is ConcentrateXYCFeesInvariants {
             balanceA, balanceB, sqrtPriceMin, sqrtPriceMax, 0, 0
         );
         ISwapVM.Order memory order = _createOrder(bytecode);
-        InvariantConfig memory config = _config(order, false);
+        InvariantConfig memory config = _config(order);
 
         assertAllInvariantsWithConfig(
             swapVM,
             order,
-            address(tokenB),
             address(tokenA),
+            address(tokenB),
             config
         );
     }

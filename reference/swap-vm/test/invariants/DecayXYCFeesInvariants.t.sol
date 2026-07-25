@@ -15,7 +15,7 @@ import { SwapVMRouter } from "../../src/routers/SwapVMRouter.sol";
 import { MakerTraitsLib } from "../../src/libs/MakerTraits.sol";
 import { TakerTraitsLib } from "../../src/libs/TakerTraits.sol";
 import { OpcodesDebug } from "../../src/opcodes/OpcodesDebug.sol";
-import { Program, ProgramBuilder, Opcode } from "../utils/ProgramBuilder.sol";
+import { Program, ProgramBuilder } from "../utils/ProgramBuilder.sol";
 import { BalancesArgsBuilder } from "../../src/instructions/Balances.sol";
 import { DecayArgsBuilder } from "../../src/instructions/Decay.sol";
 import { FeeArgsBuilder } from "../../src/instructions/Fee.sol";
@@ -51,9 +51,8 @@ contract DecayXYCFeesInvariants is Test, OpcodesDebug, CoreInvariants {
         feeRecipient = address(0xFEE);
         swapVM = new SwapVMRouter(address(aqua), address(0), address(this), "SwapVM", "1.0.0");
 
-        tokenA = new TokenMock("Token I", "TKI");
-        tokenB = new TokenMock("Token J", "TKJ");
-        if (tokenA > tokenB) (tokenA, tokenB) = (tokenB, tokenA);
+        tokenA = new TokenMock("Token A", "TKA");
+        tokenB = new TokenMock("Token B", "TKB");
 
         // Setup tokens and approvals for maker
         tokenA.mint(maker, 100000e18);
@@ -85,6 +84,8 @@ contract DecayXYCFeesInvariants is Test, OpcodesDebug, CoreInvariants {
         // Execute the swap
         (uint256 actualIn, uint256 actualOut,) = _swapVM.swap(
             order,
+            tokenIn,
+            tokenOut,
             amount,
             takerData
         );
@@ -104,15 +105,18 @@ contract DecayXYCFeesInvariants is Test, OpcodesDebug, CoreInvariants {
         uint16 decayPeriod = 300; // 5 minutes
         uint32 feeBps = 0.003e9; // 0.3% fee
 
-        Program program;
+        Program memory program = ProgramBuilder.init(_opcodes());
         bytes memory bytecode = bytes.concat(
-            program.build(Opcode.DynamicBalances,
-                BalancesArgsBuilder.build([balanceA, balanceB])),
-            program.build(Opcode.Decay,
+            program.build(_dynamicBalancesXD,
+                BalancesArgsBuilder.build(
+                    dynamic([address(tokenA), address(tokenB)]),
+                    dynamic([balanceA, balanceB])
+                )),
+            program.build(_decayXD,
                 DecayArgsBuilder.build(decayPeriod)),
-            program.build(Opcode.FlatFeeAmountIn,
+            program.build(_flatFeeAmountInXD,
                 FeeArgsBuilder.buildFlatFee(feeBps)),
-            program.build(Opcode.XYCSwap)
+            program.build(_xycSwapXD)
         );
 
         ISwapVM.Order memory order = _createOrder(bytecode);
@@ -147,15 +151,18 @@ contract DecayXYCFeesInvariants is Test, OpcodesDebug, CoreInvariants {
         uint16 decayPeriod = 600; // 10 minutes
         uint32 feeBps = 0.005e9; // 0.5% fee
 
-        Program program;
+        Program memory program = ProgramBuilder.init(_opcodes());
         bytes memory bytecode = bytes.concat(
-            program.build(Opcode.DynamicBalances,
-                BalancesArgsBuilder.build([balanceA, balanceB])),
-            program.build(Opcode.Decay,
+            program.build(_dynamicBalancesXD,
+                BalancesArgsBuilder.build(
+                    dynamic([address(tokenA), address(tokenB)]),
+                    dynamic([balanceA, balanceB])
+                )),
+            program.build(_decayXD,
                 DecayArgsBuilder.build(decayPeriod)),
-            program.build(Opcode.FlatFeeAmountOut,
+            program.build(_flatFeeAmountOutXD,
                 FeeArgsBuilder.buildFlatFee(feeBps)),
-            program.build(Opcode.XYCSwap)
+            program.build(_xycSwapXD)
         );
 
         ISwapVM.Order memory order = _createOrder(bytecode);
@@ -191,15 +198,18 @@ contract DecayXYCFeesInvariants is Test, OpcodesDebug, CoreInvariants {
         uint16 decayPeriod = 900; // 15 minutes
         uint32 feeBps = 0.1e9; // 10% progressive fee
 
-        Program program;
+        Program memory program = ProgramBuilder.init(_opcodes());
         bytes memory bytecode = bytes.concat(
-            program.build(Opcode.DynamicBalances,
-                BalancesArgsBuilder.build([balanceA, balanceB])),
-            program.build(Opcode.Decay,
+            program.build(_dynamicBalancesXD,
+                BalancesArgsBuilder.build(
+                    dynamic([address(tokenA), address(tokenB)]),
+                    dynamic([balanceA, balanceB])
+                )),
+            program.build(_decayXD,
                 DecayArgsBuilder.build(decayPeriod)),
-            program.build(Opcode.ProgressiveFeeIn,
+            program.build(_progressiveFeeInXD,
                 FeeArgsBuilderExperimental.buildProgressiveFee(feeBps)),
-            program.build(Opcode.XYCSwap)
+            program.build(_xycSwapXD)
         );
 
         ISwapVM.Order memory order = _createOrder(bytecode);
@@ -228,15 +238,18 @@ contract DecayXYCFeesInvariants is Test, OpcodesDebug, CoreInvariants {
         uint16 decayPeriod = 1200; // 20 minutes
         uint32 feeBps = 0.05e9; // 5% progressive fee
 
-        Program program;
+        Program memory program = ProgramBuilder.init(_opcodes());
         bytes memory bytecode = bytes.concat(
-            program.build(Opcode.DynamicBalances,
-                BalancesArgsBuilder.build([balanceA, balanceB])),
-            program.build(Opcode.Decay,
+            program.build(_dynamicBalancesXD,
+                BalancesArgsBuilder.build(
+                    dynamic([address(tokenA), address(tokenB)]),
+                    dynamic([balanceA, balanceB])
+                )),
+            program.build(_decayXD,
                 DecayArgsBuilder.build(decayPeriod)),
-            program.build(Opcode.ProgressiveFeeOut,
+            program.build(_progressiveFeeOutXD,
                 FeeArgsBuilderExperimental.buildProgressiveFee(feeBps)),
-            program.build(Opcode.XYCSwap)
+            program.build(_xycSwapXD)
         );
 
         ISwapVM.Order memory order = _createOrder(bytecode);
@@ -279,15 +292,18 @@ contract DecayXYCFeesInvariants is Test, OpcodesDebug, CoreInvariants {
         uint16 decayPeriod = 300;
         uint32 feeBps = 0.002e9; // 0.2% protocol fee
 
-        Program program;
+        Program memory program = ProgramBuilder.init(_opcodes());
         bytes memory bytecode = bytes.concat(
-            program.build(Opcode.ProtocolFeeAmountIn,
+            program.build(_protocolFeeAmountInXD,
                 FeeArgsBuilder.buildProtocolFee(feeBps, feeRecipient)),
-            program.build(Opcode.DynamicBalances,
-                BalancesArgsBuilder.build([balanceA, balanceB])),
-            program.build(Opcode.Decay,
+            program.build(_dynamicBalancesXD,
+                BalancesArgsBuilder.build(
+                    dynamic([address(tokenA), address(tokenB)]),
+                    dynamic([balanceA, balanceB])
+                )),
+            program.build(_decayXD,
                 DecayArgsBuilder.build(decayPeriod)),
-            program.build(Opcode.XYCSwap)
+            program.build(_xycSwapXD)
         );
 
         ISwapVM.Order memory order = _createOrder(bytecode);
@@ -328,15 +344,18 @@ contract DecayXYCFeesInvariants is Test, OpcodesDebug, CoreInvariants {
         vm.prank(maker);
         tokenB.approve(address(swapVM), type(uint256).max);
 
-        Program program;
+        Program memory program = ProgramBuilder.init(_opcodes());
         bytes memory bytecode = bytes.concat(
-            program.build(Opcode.ProtocolFeeAmountOut,
+            program.build(_protocolFeeAmountOutXD,
                 FeeArgsBuilder.buildProtocolFee(feeBps, feeRecipient)),
-            program.build(Opcode.DynamicBalances,
-                BalancesArgsBuilder.build([balanceA, balanceB])),
-            program.build(Opcode.Decay,
+            program.build(_dynamicBalancesXD,
+                BalancesArgsBuilder.build(
+                    dynamic([address(tokenA), address(tokenB)]),
+                    dynamic([balanceA, balanceB])
+                )),
+            program.build(_decayXD,
                 DecayArgsBuilder.build(decayPeriod)),
-            program.build(Opcode.XYCSwap)
+            program.build(_xycSwapXD)
         );
 
         ISwapVM.Order memory order = _createOrder(bytecode);
@@ -374,17 +393,20 @@ contract DecayXYCFeesInvariants is Test, OpcodesDebug, CoreInvariants {
         uint32 flatFeeBps = 0.001e9;      // 0.1% flat fee
         uint32 progressiveFeeBps = 0.02e9; // 2% progressive fee
 
-        Program program;
+        Program memory program = ProgramBuilder.init(_opcodes());
         bytes memory bytecode = bytes.concat(
-            program.build(Opcode.DynamicBalances,
-                BalancesArgsBuilder.build([balanceA, balanceB])),
-            program.build(Opcode.Decay,
+            program.build(_dynamicBalancesXD,
+                BalancesArgsBuilder.build(
+                    dynamic([address(tokenA), address(tokenB)]),
+                    dynamic([balanceA, balanceB])
+                )),
+            program.build(_decayXD,
                 DecayArgsBuilder.build(decayPeriod)),
-            program.build(Opcode.FlatFeeAmountIn,
+            program.build(_flatFeeAmountInXD,
                 FeeArgsBuilder.buildFlatFee(flatFeeBps)),
-            program.build(Opcode.ProgressiveFeeOut,
+            program.build(_progressiveFeeOutXD,
                 FeeArgsBuilderExperimental.buildProgressiveFee(progressiveFeeBps)),
-            program.build(Opcode.XYCSwap)
+            program.build(_xycSwapXD)
         );
 
         ISwapVM.Order memory order = _createOrder(bytecode);
@@ -411,8 +433,6 @@ contract DecayXYCFeesInvariants is Test, OpcodesDebug, CoreInvariants {
     function _createOrder(bytes memory program) private view returns (ISwapVM.Order memory) {
         return MakerTraitsLib.build(MakerTraitsLib.Args({
             maker: maker,
-            tokenA: address(tokenA),
-            tokenB: address(tokenB),
             shouldUnwrapWeth: false,
             useAquaInsteadOfSignature: false,
             allowZeroAmountIn: false,
@@ -451,7 +471,6 @@ contract DecayXYCFeesInvariants is Test, OpcodesDebug, CoreInvariants {
             isStrictThresholdAmount: false,
             isFirstTransferFromTaker: false,
             useTransferFromAndAquaPush: false,
-            isAToB: true,
             threshold: thresholdData,
             to: address(this),
             deadline: 0,

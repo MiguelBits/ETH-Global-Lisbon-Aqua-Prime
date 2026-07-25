@@ -15,10 +15,11 @@ import { SwapVMRouter } from "../src/routers/SwapVMRouter.sol";
 import { MakerTraitsLib } from "../src/libs/MakerTraits.sol";
 import { TakerTraitsLib } from "../src/libs/TakerTraits.sol";
 import { OpcodesDebug } from "../src/opcodes/OpcodesDebug.sol";
-import { Program, ProgramBuilder, Opcode } from "./utils/ProgramBuilder.sol";
+import { Program, ProgramBuilder } from "./utils/ProgramBuilder.sol";
 import { TWAPSwapArgsBuilder } from "../src/instructions/TWAPSwap.sol";
 import { LimitSwapArgsBuilder } from "../src/instructions/LimitSwap.sol";
 import { BalancesArgsBuilder } from "../src/instructions/Balances.sol";
+import { dynamic } from "./utils/Dynamic.sol";
 
 /**
  * @title TWAPSwapTest
@@ -49,9 +50,8 @@ contract TWAPSwapTest is Test, OpcodesDebug {
         taker = address(this);
         swapVM = new SwapVMRouter(address(aqua), address(0), address(this), "SwapVM", "1.0.0");
 
-        tokenA = new TokenMock("Token I", "TKI");
-        tokenB = new TokenMock("Token J", "TKJ");
-        if (tokenA > tokenB) (tokenA, tokenB) = (tokenB, tokenA);
+        tokenA = new TokenMock("Token A", "TKA");
+        tokenB = new TokenMock("Token B", "TKB");
 
         // Setup tokens and approvals for maker
         tokenA.mint(maker, 10000e18);
@@ -72,13 +72,16 @@ contract TWAPSwapTest is Test, OpcodesDebug {
         uint256 tokenBBalance,
         TWAPSwapArgsBuilder.TwapArgs memory twapArgs
     ) private view returns (bytes memory) {
-        Program program;
+        Program memory program = ProgramBuilder.init(_opcodes());
         return bytes.concat(
-            program.build(Opcode.StaticBalances,
-                BalancesArgsBuilder.build([uint256(tokenABalance), tokenBBalance])),
-            program.build(Opcode.TWAPSwap,
+            program.build(_staticBalancesXD,
+                BalancesArgsBuilder.build(
+                    dynamic([address(tokenA), address(tokenB)]),
+                    dynamic([tokenABalance, tokenBBalance])
+                )),
+            program.build(_twap,
                 TWAPSwapArgsBuilder.build(twapArgs)),
-            program.build(Opcode.LimitSwap,
+            program.build(_limitSwap1D,
                 LimitSwapArgsBuilder.build(address(tokenA), address(tokenB)))
         );
     }
@@ -258,6 +261,8 @@ contract TWAPSwapTest is Test, OpcodesDebug {
         vm.expectRevert();
         swapVM.swap(
             order,
+            address(tokenA),
+            address(tokenB),
             2e18,
             exactInData
         );
@@ -305,6 +310,8 @@ contract TWAPSwapTest is Test, OpcodesDebug {
 
         try swapVM.asView().quote(
             order,
+            address(tokenA),
+            address(tokenB),
             2e18,
             exactInData
         ) returns (uint256, uint256 quotedOut, bytes32) {
@@ -532,6 +539,8 @@ contract TWAPSwapTest is Test, OpcodesDebug {
         vm.expectRevert(); // Expecting TWAPSwapTradeAmountExceedLiquidity
         swapVM.swap(
             order,
+            address(tokenA),
+            address(tokenB),
             100e18, // Trying to get ~40-50e18 but only ~10e18 available
             exactInData
         );
@@ -553,6 +562,8 @@ contract TWAPSwapTest is Test, OpcodesDebug {
         // Execute the swap
         (uint256 actualIn, uint256 actualOut,) = _swapVM.swap(
             order,
+            tokenIn,
+            tokenOut,
             amount,
             takerData
         );
@@ -566,8 +577,6 @@ contract TWAPSwapTest is Test, OpcodesDebug {
     function _createOrder(bytes memory program) private view returns (ISwapVM.Order memory) {
         return MakerTraitsLib.build(MakerTraitsLib.Args({
             maker: maker,
-            tokenA: address(tokenA),
-            tokenB: address(tokenB),
             shouldUnwrapWeth: false,
             useAquaInsteadOfSignature: false,
             allowZeroAmountIn: false,
@@ -602,7 +611,6 @@ contract TWAPSwapTest is Test, OpcodesDebug {
         bytes memory takerTraits = TakerTraitsLib.build(TakerTraitsLib.Args({
             taker: address(0),
             isExactIn: isExactIn,
-            isAToB: true,
             shouldUnwrapWeth: false,
             isStrictThresholdAmount: false,
             isFirstTransferFromTaker: false,

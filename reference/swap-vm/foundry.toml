@@ -8,6 +8,16 @@ fs_permissions = [
     { access = "read-write", path = "./config" }
 ]
 
+[rpc_endpoints]
+mainnet = "${MAINNET_RPC_URL}"
+cloudflare = "https://cloudflare-eth.com"
+one_rpc = "https://1rpc.io/eth"
+publicnode = "https://ethereum.publicnode.com"
+
+[profile.default.optimizer_details]
+yul = true
+yulDetails = { stackAllocation = true, optimizerSteps = "dhfoDgvulfnTUtnIf[xa[r]EscLMcCTUtTOntnfDIulLculVcul Tpeul]jmul[jul] VcTOcul jmul : fDnTOcmu" }
+
 [fmt]
 single_line_statement_blocks = "multi"
 multiline_func_header        = "all"
@@ -16,8 +26,21 @@ bracket_spacing              = true
 int_types                    = "long"
 number_underscore            = "thousands"
 
+# Aqua Prime: fast local-iteration profile. Keeps via_ir (required to avoid stack-too-deep) but drops the
+# heavy custom yul optimizer steps and minimizes optimizer_runs for the smallest bytecode + quickest builds.
+# Final validation and gas snapshots MUST use the default profile.
+[profile.fast]
+solc_version   = "0.8.30"
+optimizer      = true
+optimizer_runs = 1
+via_ir         = true
+
 [profile.ci]
 solc_version   = "0.8.30"
 optimizer      = true
 optimizer_runs = 700
 via_ir         = true
+
+[profile.ci.optimizer_details]
+yul = true
+yulDetails = { stackAllocation = true, optimizerSteps = "dhfoDgvulfnTUtnIf[xa[r]EscLMcCTUtTOntnfDIulLculVcul Tpeul]jmul[jul] VcTOcul jmul : fDnTOcmu" }

@@ -9,7 +9,7 @@ import { ISwapVM } from "../src/SwapVM.sol";
 
 
 import { XYCSwap } from "../src/instructions/XYCSwap.sol";
-import { Program, ProgramBuilder, Opcode } from "./utils/ProgramBuilder.sol";
+import { Program, ProgramBuilder } from "./utils/ProgramBuilder.sol";
 import { TakerTraitsLib } from "../src/libs/TakerTraits.sol";
 import { MockTakerFirstTransfer } from "./mocks/MockTakerFirstTransfer.sol";
 
@@ -92,7 +92,6 @@ contract SwapVMAquaTest is AquaSwapVMTest {
         bytes memory customTakerData = TakerTraitsLib.build(TakerTraitsLib.Args({
             taker: address(swapProgram.taker),
             isExactIn: swapProgram.isExactIn,
-            isAToB: false, // zeroForOne=false: swap tokenB->tokenA, and tokenB > tokenA after sort
             shouldUnwrapWeth: false,
             hasPreTransferInCallback: true,
             hasPreTransferOutCallback: false,
@@ -113,10 +112,13 @@ contract SwapVMAquaTest is AquaSwapVMTest {
         }));
 
         bytes memory sigAndTakerData = abi.encodePacked(customTakerData);
+        (address tokenIn, address tokenOut) = getTokenAddresses(swapProgram);
 
         // Perform swap with custom taker data
         (uint256 amountIn, uint256 amountOut) = swapProgram.taker.swap(
             order,
+            tokenIn,
+            tokenOut,
             swapProgram.amount,
             sigAndTakerData
         );

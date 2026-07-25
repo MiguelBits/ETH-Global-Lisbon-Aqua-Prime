@@ -20,7 +20,7 @@ import { Balances, BalancesArgsBuilder } from "../src/instructions/Balances.sol"
 import { XYCSwap } from "../src/instructions/XYCSwap.sol";
 import { Fee, FeeArgsBuilder } from "../src/instructions/Fee.sol";
 
-import { Program, ProgramBuilder, Opcode } from "./utils/ProgramBuilder.sol";
+import { Program, ProgramBuilder } from "./utils/ProgramBuilder.sol";
 import { RoundingInvariants } from "./invariants/RoundingInvariants.sol";
 
 contract MockToken is ERC20 {
@@ -50,9 +50,8 @@ contract XYCSwapTest is Test, OpcodesDebug {
 
         swapVM = new SwapVMRouter(address(0), address(0), address(this), "SwapVM", "1.0.0");
 
-        tokenA = new MockToken("Token I", "TKI");
-        tokenB = new MockToken("Token J", "TKJ");
-        if (address(tokenA) > address(tokenB)) (tokenA, tokenB) = (tokenB, tokenA);
+        tokenA = new MockToken("Token A", "TKA");
+        tokenB = new MockToken("Token B", "TKB");
 
         tokenA.mint(maker, 1000000e18);
         tokenB.mint(maker, 1000000e18);
@@ -75,26 +74,30 @@ contract XYCSwapTest is Test, OpcodesDebug {
     // ========================================
 
     function _makeOrder(uint256 balanceA, uint256 balanceB, uint256 feeIn) internal view returns (ISwapVM.Order memory) {
-        Program program;
+        Program memory program = ProgramBuilder.init(_opcodes());
 
         bytes memory bytecode;
         if (feeIn > 0) {
             bytecode = bytes.concat(
-                program.build(Opcode.DynamicBalances, BalancesArgsBuilder.build([uint256(balanceA), balanceB])),
-                program.build(Opcode.FlatFeeAmountIn, FeeArgsBuilder.buildFlatFee(uint32(feeIn))),
-                program.build(Opcode.XYCSwap)
+                program.build(_dynamicBalancesXD, BalancesArgsBuilder.build(
+                    dynamic([address(tokenA), address(tokenB)]),
+                    dynamic([balanceA, balanceB])
+                )),
+                program.build(_flatFeeAmountInXD, FeeArgsBuilder.buildFlatFee(uint32(feeIn))),
+                program.build(_xycSwapXD)
             );
         } else {
             bytecode = bytes.concat(
-                program.build(Opcode.DynamicBalances, BalancesArgsBuilder.build([uint256(balanceA), balanceB])),
-                program.build(Opcode.XYCSwap)
+                program.build(_dynamicBalancesXD, BalancesArgsBuilder.build(
+                    dynamic([address(tokenA), address(tokenB)]),
+                    dynamic([balanceA, balanceB])
+                )),
+                program.build(_xycSwapXD)
             );
         }
 
         return MakerTraitsLib.build(MakerTraitsLib.Args({
             maker: maker,
-            tokenA: address(tokenA),
-            tokenB: address(tokenB),
             shouldUnwrapWeth: false,
             useAquaInsteadOfSignature: false,
             allowZeroAmountIn: false,
@@ -116,10 +119,6 @@ contract XYCSwapTest is Test, OpcodesDebug {
     }
 
     function _signAndPack(ISwapVM.Order memory order, bool isExactIn, uint256 threshold) internal view returns (bytes memory) {
-        return _signAndPack(order, isExactIn, threshold, true);
-    }
-
-    function _signAndPack(ISwapVM.Order memory order, bool isExactIn, uint256 threshold, bool isAToB) internal view returns (bytes memory) {
         bytes32 orderHash = swapVM.hash(order);
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(makerPrivateKey, orderHash);
         bytes memory signature = abi.encodePacked(r, s, v);
@@ -133,7 +132,6 @@ contract XYCSwapTest is Test, OpcodesDebug {
             isStrictThresholdAmount: false,
             isFirstTransferFromTaker: false,
             useTransferFromAndAquaPush: false,
-            isAToB: isAToB,
             threshold: thresholdData,
             to: taker,
             deadline: 0,
@@ -165,7 +163,7 @@ contract XYCSwapTest is Test, OpcodesDebug {
         uint256 expectedOut = (amountIn * poolB) / (poolA + amountIn);
 
         vm.prank(taker);
-        (, uint256 amountOut,) = swapVM.swap(order, amountIn, takerData);
+        (, uint256 amountOut,) = swapVM.swap(order, address(tokenA), address(tokenB), amountIn, takerData);
 
         assertEq(amountOut, expectedOut, "Output should match x*y=k formula");
     }
@@ -183,7 +181,7 @@ contract XYCSwapTest is Test, OpcodesDebug {
         uint256 expectedOut = (amountInAfterFee * poolB) / (poolA + amountInAfterFee);
 
         vm.prank(taker);
-        (, uint256 amountOut,) = swapVM.swap(order, amountIn, takerData);
+        (, uint256 amountOut,) = swapVM.swap(order, address(tokenA), address(tokenB), amountIn, takerData);
 
         assertEq(amountOut, expectedOut, "Output should account for fee");
     }
@@ -197,11 +195,11 @@ contract XYCSwapTest is Test, OpcodesDebug {
 
         // First swap
         vm.prank(taker);
-        (, uint256 amountOut1,) = swapVM.swap(order, 10e18, takerData);
+        (, uint256 amountOut1,) = swapVM.swap(order, address(tokenA), address(tokenB), 10e18, takerData);
 
         // Second swap (state has changed)
         vm.prank(taker);
-        (, uint256 amountOut2,) = swapVM.swap(order, 10e18, takerData);
+        (, uint256 amountOut2,) = swapVM.swap(order, address(tokenA), address(tokenB), 10e18, takerData);
 
         assertLt(amountOut2, amountOut1, "Second swap should get worse rate");
     }
@@ -267,20 +265,16 @@ contract XYCSwapTest is Test, OpcodesDebug {
     }
 
     // Helper function to execute swaps for invariant testing
-    // Direction (isAToB) is derived per-call from tokenIn/tokenOut so round-trip
-    // invariants can swap both ways; the passed takerData is ignored in favor of
-    // a freshly packed one carrying the correct direction.
     function _executeSwap(
         SwapVM _swapVM,
         ISwapVM.Order memory order,
         address tokenIn,
         address tokenOut,
         uint256 amount,
-        bytes memory /* takerData */
+        bytes memory takerData
     ) internal returns (uint256 amountOut) {
-        bytes memory takerData = _signAndPack(order, true, 0, tokenIn < tokenOut);
         vm.prank(taker);
-        (, amountOut,) = _swapVM.swap(order, amount, takerData);
+        (, amountOut,) = _swapVM.swap(order, tokenIn, tokenOut, amount, takerData);
     }
 }
 

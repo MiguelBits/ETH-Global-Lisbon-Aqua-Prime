@@ -28,6 +28,8 @@ interface ISwapVM {
 
     /// @notice Preview swap amounts without executing (static call)
     /// @param order The maker's order containing strategy bytecode
+    /// @param tokenIn Input token address
+    /// @param tokenOut Output token address
     /// @param amount Input amount (if isExactIn) or output amount (if !isExactIn)
     /// @param takerTraitsAndData Packed taker configuration and dynamic data
     /// @return amountIn Computed input token amount
@@ -35,12 +37,16 @@ interface ISwapVM {
     /// @return orderHash Unique identifier for this order
     function quote(
         Order calldata order,
+        address tokenIn,
+        address tokenOut,
         uint256 amount,
         bytes calldata takerTraitsAndData
     ) external view returns (uint256 amountIn, uint256 amountOut, bytes32 orderHash);
 
     /// @notice Execute a swap against a maker's order
     /// @param order The maker's order containing strategy bytecode
+    /// @param tokenIn Input token address
+    /// @param tokenOut Output token address
     /// @param amount Input amount (if isExactIn) or output amount (if !isExactIn)
     /// @param takerTraitsAndData Packed taker configuration and dynamic data
     /// @return amountIn Computed input token amount
@@ -48,7 +54,9 @@ interface ISwapVM {
     /// @return orderHash Unique identifier for this order
     function swap(
         Order calldata order,
+        address tokenIn,
+        address tokenOut,
         uint256 amount,
         bytes calldata takerTraitsAndData
-    ) external payable returns (uint256 amountIn, uint256 amountOut, bytes32 orderHash);
+    ) external returns (uint256 amountIn, uint256 amountOut, bytes32 orderHash);
 }

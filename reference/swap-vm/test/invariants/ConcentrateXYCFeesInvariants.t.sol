@@ -16,7 +16,7 @@ import { SwapVMRouter } from "../../src/routers/SwapVMRouter.sol";
 import { MakerTraitsLib } from "../../src/libs/MakerTraits.sol";
 import { TakerTraitsLib } from "../../src/libs/TakerTraits.sol";
 import { OpcodesDebug } from "../../src/opcodes/OpcodesDebug.sol";
-import { Program, ProgramBuilder, Opcode } from "../utils/ProgramBuilder.sol";
+import { Program, ProgramBuilder } from "../utils/ProgramBuilder.sol";
 import { BalancesArgsBuilder } from "../../src/instructions/Balances.sol";
 import { FeeArgsBuilder } from "../../src/instructions/Fee.sol";
 import { XYCConcentrateArgsBuilder } from "../../src/instructions/XYCConcentrate.sol";
@@ -90,9 +90,8 @@ contract ConcentrateXYCFeesInvariants is Test, OpcodesDebug, CoreInvariants {
         taker = address(this);
         swapVM = new SwapVMRouter(address(aqua), address(0), address(this), "SwapVM", "1.0.0");
 
-        tokenA = new TokenMock("Token I", "TKI");
-        tokenB = new TokenMock("Token J", "TKJ");
-        if (tokenA > tokenB) (tokenA, tokenB) = (tokenB, tokenA);
+        tokenA = new TokenMock("Token A", "TKA");
+        tokenB = new TokenMock("Token B", "TKB");
 
         // Setup tokens and approvals for maker
         tokenA.mint(maker, type(uint128).max);
@@ -151,6 +150,8 @@ contract ConcentrateXYCFeesInvariants is Test, OpcodesDebug, CoreInvariants {
         // Execute the swap
         (uint256 actualIn, uint256 actualOut,) = _swapVM.swap(
             order,
+            tokenIn,
+            tokenOut,
             amount,
             takerData
         );
@@ -171,32 +172,31 @@ contract ConcentrateXYCFeesInvariants is Test, OpcodesDebug, CoreInvariants {
         uint32 _flatFeeInBps,
         uint32 _protocolFeeOutBps
     ) internal view returns (bytes memory) {
-        Program program;
+        Program memory program = ProgramBuilder.init(_opcodes());
 
         return bytes.concat(
             // Protocol fees BEFORE balances
-            (_protocolFeeOutBps > 0) ? program.build(Opcode.ProtocolFeeAmountOut,
+            (_protocolFeeOutBps > 0) ? program.build(_protocolFeeAmountOutXD,
                 FeeArgsBuilder.buildProtocolFee(_protocolFeeOutBps, feeRecipient)) : bytes(""),
 
             // Balances
-            program.build(Opcode.DynamicBalances,
-                BalancesArgsBuilder.build([_balanceA, _balanceB])),
+            program.build(_dynamicBalancesXD,
+                BalancesArgsBuilder.build(
+                    dynamic([address(tokenA), address(tokenB)]),
+                    dynamic([_balanceA, _balanceB])
+                )),
 
             // Flat fee BEFORE concentrate (concentrate is terminal)
-            (_flatFeeInBps > 0) ? program.build(Opcode.FlatFeeAmountIn,
+            (_flatFeeInBps > 0) ? program.build(_flatFeeAmountInXD,
                 FeeArgsBuilder.buildFlatFee(_flatFeeInBps)) : bytes(""),
 
             // Concentrate instruction (terminal: computes virtual reserves + swap)
-            program.build(Opcode.XYCConcentrateSwap,
+            program.build(_xycConcentrateGrowLiquidity2D,
                 XYCConcentrateArgsBuilder.build2D(_sqrtPriceMin, _sqrtPriceMax))
         );
     }
 
     function _config(ISwapVM.Order memory order) internal view returns (InvariantConfig memory) {
-        return _config(order, true);
-    }
-
-    function _config(ISwapVM.Order memory order, bool aToB) internal view returns (InvariantConfig memory) {
         InvariantConfig memory config = _getDefaultConfig();
         config.testAmounts = testAmounts;
         config.testAmountsExactOut = testAmountsExactOut;
@@ -206,8 +206,8 @@ contract ConcentrateXYCFeesInvariants is Test, OpcodesDebug, CoreInvariants {
         config.skipMonotonicity = skipMonotonicity;
         config.skipSpotPrice = skipSpotPrice;
         config.monotonicityToleranceBps = monotonicityToleranceBps;
-        config.exactInTakerData = _signAndPackTakerData(order, true, 0, aToB);
-        config.exactOutTakerData = _signAndPackTakerData(order, false, type(uint256).max, aToB);
+        config.exactInTakerData = _signAndPackTakerData(order, true, 0);
+        config.exactOutTakerData = _signAndPackTakerData(order, false, type(uint256).max);
         return config;
     }
 
@@ -301,8 +301,6 @@ contract ConcentrateXYCFeesInvariants is Test, OpcodesDebug, CoreInvariants {
     function _createOrder(bytes memory program) internal view returns (ISwapVM.Order memory) {
         return MakerTraitsLib.build(MakerTraitsLib.Args({
             maker: maker,
-            tokenA: address(tokenA),
-            tokenB: address(tokenB),
             shouldUnwrapWeth: false,
             useAquaInsteadOfSignature: false,
             allowZeroAmountIn: false,
@@ -328,15 +326,6 @@ contract ConcentrateXYCFeesInvariants is Test, OpcodesDebug, CoreInvariants {
         bool isExactIn,
         uint256 threshold
     ) internal view returns (bytes memory) {
-        return _signAndPackTakerData(order, isExactIn, threshold, true);
-    }
-
-    function _signAndPackTakerData(
-        ISwapVM.Order memory order,
-        bool isExactIn,
-        uint256 threshold,
-        bool aToB
-    ) internal view returns (bytes memory) {
         bytes32 orderHash = swapVM.hash(order);
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(makerPK, orderHash);
         bytes memory signature = abi.encodePacked(r, s, v);
@@ -350,7 +339,6 @@ contract ConcentrateXYCFeesInvariants is Test, OpcodesDebug, CoreInvariants {
             isStrictThresholdAmount: false,
             isFirstTransferFromTaker: false,
             useTransferFromAndAquaPush: false,
-            isAToB: aToB,
             threshold: thresholdData,
             to: address(this),
             deadline: 0,

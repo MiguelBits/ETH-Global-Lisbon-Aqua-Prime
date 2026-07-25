@@ -22,7 +22,7 @@ contract SwapVmRescueFundsTest is Test, OpcodesDebug {
 
     function setUp() public {
         swapVM = new SwapVMRouter(address(0), address(0), address(this), "SwapVM", "1.0.0");
-        tokenA = new TokenMock("Token I", "TKI");
+        tokenA = new TokenMock("Token A", "TKA");
     }
 
     function test_RescueFunds_ERC20() public {

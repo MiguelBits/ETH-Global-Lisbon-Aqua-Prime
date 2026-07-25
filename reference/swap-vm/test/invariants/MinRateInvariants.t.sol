@@ -16,12 +16,13 @@ import { SwapVMRouter } from "../../src/routers/SwapVMRouter.sol";
 import { MakerTraitsLib } from "../../src/libs/MakerTraits.sol";
 import { TakerTraitsLib } from "../../src/libs/TakerTraits.sol";
 import { OpcodesDebug } from "../../src/opcodes/OpcodesDebug.sol";
-import { Program, ProgramBuilder, Opcode } from "../utils/ProgramBuilder.sol";
+import { Program, ProgramBuilder } from "../utils/ProgramBuilder.sol";
 import { BalancesArgsBuilder } from "../../src/instructions/Balances.sol";
 import { LimitSwapArgsBuilder } from "../../src/instructions/LimitSwap.sol";
 import { DutchAuctionArgsBuilder } from "../../src/instructions/DutchAuction.sol";
 import { MinRateArgsBuilder } from "../../src/instructions/MinRate.sol";
 import { FeeArgsBuilder } from "../../src/instructions/Fee.sol";
+import { dynamic } from "../utils/Dynamic.sol";
 
 import { CoreInvariants } from "./CoreInvariants.t.sol";
 
@@ -55,9 +56,8 @@ contract MinRateInvariants is Test, OpcodesDebug, CoreInvariants {
         protocolFeeCollector = address(0x1234567890123456789012345678901234567890);
         swapVM = new SwapVMRouter(address(aqua), address(0), address(this), "SwapVM", "1.0.0");
 
-        tokenA = new TokenMock("Token I", "TKI");
-        tokenB = new TokenMock("Token J", "TKJ");
-        if (tokenA > tokenB) (tokenA, tokenB) = (tokenB, tokenA);
+        tokenA = new TokenMock("Token A", "TKA");
+        tokenB = new TokenMock("Token B", "TKB");
 
         // Setup tokens and approvals for maker
         tokenA.mint(maker, 10000e18);
@@ -89,6 +89,8 @@ contract MinRateInvariants is Test, OpcodesDebug, CoreInvariants {
         // Execute the swap
         (uint256 actualIn, uint256 actualOut,) = _swapVM.swap(
             order,
+            tokenIn,
+            tokenOut,
             amount,
             takerData
         );
@@ -108,13 +110,16 @@ contract MinRateInvariants is Test, OpcodesDebug, CoreInvariants {
         uint64 rateA = 1e18;
         uint64 rateB = 2e18; // Cap at 1:2 rate
 
-        Program program;
+        Program memory program = ProgramBuilder.init(_opcodes());
         bytes memory bytecode = bytes.concat(
-            program.build(Opcode.StaticBalances,
-                BalancesArgsBuilder.build([uint256(1000e18), uint256(3000e18)])),  // 1:3 base rate
-            program.build(Opcode.AdjustMinRate,
+            program.build(_staticBalancesXD,
+                BalancesArgsBuilder.build(
+                    dynamic([address(tokenA), address(tokenB)]),
+                    dynamic([uint256(1000e18), uint256(3000e18)])  // 1:3 base rate
+                )),
+            program.build(_adjustMinRate1D,
                 MinRateArgsBuilder.build(address(tokenA), address(tokenB), rateA, rateB)),
-            program.build(Opcode.LimitSwap,
+            program.build(_limitSwap1D,
                 LimitSwapArgsBuilder.build(address(tokenA), address(tokenB)))
         );
 
@@ -124,6 +129,8 @@ contract MinRateInvariants is Test, OpcodesDebug, CoreInvariants {
         bytes memory exactInData = _signAndPackTakerData(order, true, 0);
         (uint256 quotedIn, uint256 quotedOut,) = swapVM.asView().quote(
             order,
+            address(tokenA),
+            address(tokenB),
             1e18,
             exactInData
         );
@@ -156,15 +163,18 @@ contract MinRateInvariants is Test, OpcodesDebug, CoreInvariants {
         uint64 rateA = 1e18;
         uint64 rateB = 1.8e18; // Cap at 1:1.8 rate
 
-        Program program;
+        Program memory program = ProgramBuilder.init(_opcodes());
         bytes memory bytecode = bytes.concat(
-            program.build(Opcode.StaticBalances,
-                BalancesArgsBuilder.build([uint256(1000e18), uint256(2500e18)])),  // Start with 1:2.5 rate
-            program.build(Opcode.DutchAuctionBalanceIn,
+            program.build(_staticBalancesXD,
+                BalancesArgsBuilder.build(
+                    dynamic([address(tokenA), address(tokenB)]),
+                    dynamic([uint256(1000e18), uint256(2500e18)])  // Start with 1:2.5 rate
+                )),
+            program.build(_dutchAuctionBalanceIn1D,
                 DutchAuctionArgsBuilder.build(startTime, duration, decayFactor)),
-            program.build(Opcode.AdjustMinRate,
+            program.build(_adjustMinRate1D,
                 MinRateArgsBuilder.build(address(tokenA), address(tokenB), rateA, rateB)),
-            program.build(Opcode.LimitSwap,
+            program.build(_limitSwap1D,
                 LimitSwapArgsBuilder.build(address(tokenA), address(tokenB)))
         );
 
@@ -177,6 +187,8 @@ contract MinRateInvariants is Test, OpcodesDebug, CoreInvariants {
         bytes memory exactInData = _signAndPackTakerData(order, true, 0);
         (uint256 quotedIn, uint256 quotedOut,) = swapVM.asView().quote(
             order,
+            address(tokenA),
+            address(tokenB),
             1e18,
             exactInData
         );
@@ -206,15 +218,18 @@ contract MinRateInvariants is Test, OpcodesDebug, CoreInvariants {
         uint64 rateA = 1e18;
         uint64 rateB = 2.5e18; // Cap at 1:2.5 rate
 
-        Program program;
+        Program memory program = ProgramBuilder.init(_opcodes());
         bytes memory bytecode = bytes.concat(
-            program.build(Opcode.StaticBalances,
-                BalancesArgsBuilder.build([uint256(1000e18), uint256(3000e18)])),  // Start with 1:3 rate
-            program.build(Opcode.DutchAuctionBalanceOut,
+            program.build(_staticBalancesXD,
+                BalancesArgsBuilder.build(
+                    dynamic([address(tokenA), address(tokenB)]),
+                    dynamic([uint256(1000e18), uint256(3000e18)])  // Start with 1:3 rate
+                )),
+            program.build(_dutchAuctionBalanceOut1D,
                 DutchAuctionArgsBuilder.build(startTime, duration, decayFactor)),
-            program.build(Opcode.AdjustMinRate,
+            program.build(_adjustMinRate1D,
                 MinRateArgsBuilder.build(address(tokenA), address(tokenB), rateA, rateB)),
-            program.build(Opcode.LimitSwap,
+            program.build(_limitSwap1D,
                 LimitSwapArgsBuilder.build(address(tokenA), address(tokenB)))
         );
 
@@ -227,6 +242,8 @@ contract MinRateInvariants is Test, OpcodesDebug, CoreInvariants {
         bytes memory exactInData = _signAndPackTakerData(order, true, 0);
         (uint256 quotedIn, uint256 quotedOut,) = swapVM.asView().quote(
             order,
+            address(tokenA),
+            address(tokenB),
             1e18,
             exactInData
         );
@@ -254,15 +271,18 @@ contract MinRateInvariants is Test, OpcodesDebug, CoreInvariants {
         uint64 rateB = 2e18; // Cap at 1:2 rate
         uint32 feeBps = 100; // 1% fee on input
 
-        Program program;
+        Program memory program = ProgramBuilder.init(_opcodes());
         bytes memory bytecode = bytes.concat(
-            program.build(Opcode.StaticBalances,
-                BalancesArgsBuilder.build([uint256(1000e18), uint256(5000e18)])),  // 1:5 base rate (very generous)
-            program.build(Opcode.FlatFeeAmountIn,
+            program.build(_staticBalancesXD,
+                BalancesArgsBuilder.build(
+                    dynamic([address(tokenA), address(tokenB)]),
+                    dynamic([uint256(1000e18), uint256(5000e18)])  // 1:5 base rate (very generous)
+                )),
+            program.build(_flatFeeAmountInXD,
                 FeeArgsBuilder.buildFlatFee(feeBps)),
-            program.build(Opcode.AdjustMinRate,
+            program.build(_adjustMinRate1D,
                 MinRateArgsBuilder.build(address(tokenA), address(tokenB), rateA, rateB)),
-            program.build(Opcode.LimitSwap,
+            program.build(_limitSwap1D,
                 LimitSwapArgsBuilder.build(address(tokenA), address(tokenB)))
         );
 
@@ -304,15 +324,18 @@ contract MinRateInvariants is Test, OpcodesDebug, CoreInvariants {
         uint64 rateB = 2e18; // Cap at 1:2 rate
         uint32 feeBps = 200; // 2% fee on output
 
-        Program program;
+        Program memory program = ProgramBuilder.init(_opcodes());
         bytes memory bytecode = bytes.concat(
-            program.build(Opcode.StaticBalances,
-                BalancesArgsBuilder.build([uint256(1000e18), uint256(6000e18)])),  // 1:6 base rate (very generous)
-            program.build(Opcode.FlatFeeAmountOut,
+            program.build(_staticBalancesXD,
+                BalancesArgsBuilder.build(
+                    dynamic([address(tokenA), address(tokenB)]),
+                    dynamic([uint256(1000e18), uint256(6000e18)])  // 1:6 base rate (very generous)
+                )),
+            program.build(_flatFeeAmountOutXD,
                 FeeArgsBuilder.buildFlatFee(feeBps)),
-            program.build(Opcode.AdjustMinRate,
+            program.build(_adjustMinRate1D,
                 MinRateArgsBuilder.build(address(tokenA), address(tokenB), rateA, rateB)),
-            program.build(Opcode.LimitSwap,
+            program.build(_limitSwap1D,
                 LimitSwapArgsBuilder.build(address(tokenA), address(tokenB)))
         );
 
@@ -353,15 +376,18 @@ contract MinRateInvariants is Test, OpcodesDebug, CoreInvariants {
         uint64 rateB = 1.85e18; // Cap at 1:1.85 rate
         uint32 feeBps = 150; // 1.5% protocol fee
 
-        Program program;
+        Program memory program = ProgramBuilder.init(_opcodes());
         bytes memory bytecode = bytes.concat(
-            program.build(Opcode.StaticBalances,
-                BalancesArgsBuilder.build([uint256(1000e18), uint256(8000e18)])),  // 1:8 base rate (extremely generous)
-            program.build(Opcode.ProtocolFeeAmountOut,
+            program.build(_staticBalancesXD,
+                BalancesArgsBuilder.build(
+                    dynamic([address(tokenA), address(tokenB)]),
+                    dynamic([uint256(1000e18), uint256(8000e18)])  // 1:8 base rate (extremely generous)
+                )),
+            program.build(_protocolFeeAmountOutXD,
                 FeeArgsBuilder.buildProtocolFee(feeBps, protocolFeeCollector)),
-            program.build(Opcode.AdjustMinRate,
+            program.build(_adjustMinRate1D,
                 MinRateArgsBuilder.build(address(tokenA), address(tokenB), rateA, rateB)),
-            program.build(Opcode.LimitSwap,
+            program.build(_limitSwap1D,
                 LimitSwapArgsBuilder.build(address(tokenA), address(tokenB)))
         );
 
@@ -407,19 +433,22 @@ contract MinRateInvariants is Test, OpcodesDebug, CoreInvariants {
         uint32 flatFeeBps = 50; // 0.5% flat fee on input
         uint32 protocolFeeBps = 100; // 1% protocol fee on output
 
-        Program program;
+        Program memory program = ProgramBuilder.init(_opcodes());
         bytes memory bytecode = bytes.concat(
-            program.build(Opcode.StaticBalances,
-                BalancesArgsBuilder.build([uint256(1000e18), uint256(7000e18)])),  // 1:7 base rate (very generous)
-            program.build(Opcode.DutchAuctionBalanceIn,
+            program.build(_staticBalancesXD,
+                BalancesArgsBuilder.build(
+                    dynamic([address(tokenA), address(tokenB)]),
+                    dynamic([uint256(1000e18), uint256(7000e18)])  // 1:7 base rate (very generous)
+                )),
+            program.build(_dutchAuctionBalanceIn1D,
                 DutchAuctionArgsBuilder.build(startTime, duration, decayFactor)),
-            program.build(Opcode.FlatFeeAmountIn,
+            program.build(_flatFeeAmountInXD,
                 FeeArgsBuilder.buildFlatFee(flatFeeBps)),
-            program.build(Opcode.ProtocolFeeAmountOut,
+            program.build(_protocolFeeAmountOutXD,
                 FeeArgsBuilder.buildProtocolFee(protocolFeeBps, protocolFeeCollector)),
-            program.build(Opcode.AdjustMinRate,
+            program.build(_adjustMinRate1D,
                 MinRateArgsBuilder.build(address(tokenA), address(tokenB), rateA, rateB)),
-            program.build(Opcode.LimitSwap,
+            program.build(_limitSwap1D,
                 LimitSwapArgsBuilder.build(address(tokenA), address(tokenB)))
         );
 
@@ -459,8 +488,6 @@ contract MinRateInvariants is Test, OpcodesDebug, CoreInvariants {
     function _createOrder(bytes memory program) private view returns (ISwapVM.Order memory) {
         return MakerTraitsLib.build(MakerTraitsLib.Args({
             maker: maker,
-            tokenA: address(tokenA),
-            tokenB: address(tokenB),
             shouldUnwrapWeth: false,
             useAquaInsteadOfSignature: false,
             allowZeroAmountIn: false,
@@ -499,7 +526,6 @@ contract MinRateInvariants is Test, OpcodesDebug, CoreInvariants {
             isStrictThresholdAmount: false,
             isFirstTransferFromTaker: false,
             useTransferFromAndAquaPush: false,
-            isAToB: true,
             threshold: thresholdData,
             to: address(this),
             deadline: 0,

@@ -87,7 +87,7 @@ contract BestRouteSelector is OpcodesDebug {
                     nextPC: 0,  // Start from beginning of strategy
                     programPtr: CalldataPtrLib.from(strategy),
                     takerArgsPtr: CalldataPtrLib.from(takerData),
-                    dispatch: _runOpcode
+                    opcodes: _opcodes()
                 }),
                 query: query,
                 swap: swap  // Reset to initial balances for each strategy!

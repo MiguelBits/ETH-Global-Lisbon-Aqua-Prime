@@ -15,6 +15,10 @@ library OraclePriceAdjusterArgsBuilder {
     using Calldata for bytes;
 
     error OrcaclePriceAdjustedMaxPriceDecayShouldBeLessThanOneE18(uint64 maxPriceDecay);
+    error OraclePriceAdjusterMissingOracleAddressArg();
+    error OraclePriceAdjusterMissingOracleDecimalsArg();
+    error OraclePriceAdjusterMissingMaxStalenessArg();
+    error OraclePriceAdjusterMissingMaxPriceDecayArg();
 
     /// @param maxPriceDecay Maximum price decay coefficient (64 bits), e.g., 0.95e18 = 5% max discount
     /// @param maxStaleness Maximum allowed staleness for oracle data in seconds (16 bits), 0 = no staleness check
@@ -41,30 +45,29 @@ library OraclePriceAdjusterArgsBuilder {
         uint8 oracleDecimals,
         address oracleAddress
     ) {
-        maxPriceDecay = uint64(bytes8(args));
-        maxStaleness = uint16(bytes2(args.slice(8)));
-        oracleDecimals = uint8(bytes1(args.slice(10)));
-        oracleAddress = address(bytes20(args.slice(11)));
+        maxPriceDecay = uint64(bytes8(args.slice(0, 8, OraclePriceAdjusterMissingMaxPriceDecayArg.selector)));
+        maxStaleness = uint16(bytes2(args.slice(8, 10, OraclePriceAdjusterMissingMaxStalenessArg.selector)));
+        oracleDecimals = uint8(bytes1(args.slice(10, 11, OraclePriceAdjusterMissingOracleDecimalsArg.selector)));
+        oracleAddress = address(bytes20(args.slice(11, 31, OraclePriceAdjusterMissingOracleAddressArg.selector)));
     }
 }
 
 /**
- * @notice Oracle Price Adjuster instruction for dynamic price adjustment based on Chainlink price feeds
- * @dev Adjusts swap prices to match Chainlink oracle prices within safe bounds:
+ * @notice Reference price clamp — bidirectional Chainlink anchoring for Aqua Prime branch B.
+ * @dev Adjusts swap prices toward a Chainlink oracle within a symmetric maxPriceDecay band:
  * - Works only for 1=>0 swaps (token1 to token0), compatible with LimitSwap and other swap instructions
  * - Fetches current market price from a Chainlink oracle (AggregatorV3Interface)
- * - Adjusts the swap price towards the oracle price within maxPriceDecay limits
- * - Ensures the adjustment is always favorable for the taker
+ * - Pool cheap vs oracle  => improve the taker quote (up to +maxDeviation)
+ * - Pool rich vs oracle   => worsen the taker quote (up to -maxDeviation) — maker-side protection
  * - Handles different decimal places from Chainlink oracles (e.g., 8 decimals for USD prices)
  *
- * This creates adaptive orders that automatically track market prices while maintaining
- * safety bounds to prevent excessive slippage or manipulation.
+ * Runs AFTER the swap instruction. Complements SkewPricer (inventory heal) on a separate routing branch.
  *
- * Example usage:
- * 1. LimitSwap sets base price: 1 ETH for 3000 USDC
- * 2. OraclePriceAdjuster with Chainlink ETH/USD oracle: 1 ETH = 3100 USD, maxPriceDecay=0.95e18 (5% max)
- * 3. exactIn: Taker gets more ETH (up to 5% improvement)
- * 4. exactOut: Taker pays less USDC (up to 5% discount)
+ * Example (maxPriceDecay = 0.95e18 => ±5% band):
+ * 1. XYC quotes 1 ETH for 2700 USDC; Chainlink implies 3000 USDC/ETH
+ * 2. exactIn sell-ETH: amountOut bumped toward oracle, capped at +5%
+ * 3. XYC quotes 1 ETH for 3300 USDC; Chainlink implies 3000 USDC/ETH
+ * 4. exactIn sell-ETH: amountOut cut toward oracle, capped at -5%
  */
 contract OraclePriceAdjuster {
     using Math for uint256;
@@ -115,26 +118,34 @@ contract OraclePriceAdjuster {
         // Calculate current swap price (token0 per token1)
         // Price = amountOut (token0) / amountIn (token1)
         uint256 currentPrice = (ctx.swap.amountOut * 1e18) / ctx.swap.amountIn;
+        if (oraclePrice == currentPrice) {
+            return;
+        }
 
-        // Only adjust if oracle price is better for taker
+        uint256 maxIncrease = 2e18 - maxPriceDecay; // e.g. 0.95e18 decay => 1.05e18 max bump
+
         if (oraclePrice > currentPrice) {
-            // Oracle shows token0 is worth more token1, so taker should get better deal
-
+            // Pool cheap vs reference — improve taker quote toward oracle
             if (ctx.query.isExactIn) {
-                // exactIn: Taker provides fixed token1, should get more token0
-                // Increase amountOut proportionally, but cap at maxIncrease
                 uint256 priceRatio = (oraclePrice * 1e18) / currentPrice;
-                uint256 maxIncrease = (2e18 - maxPriceDecay); // Mirror of decay for increase
                 uint256 adjustment = Math.min(priceRatio, maxIncrease);
                 ctx.swap.amountOut = (ctx.swap.amountOut * adjustment) / 1e18;
             } else {
-                // exactOut: Taker wants fixed token0, should pay less token1
-                // Reduce amountIn proportionally, but cap at maxPriceDecay
                 uint256 priceRatio = (currentPrice * 1e18) / oraclePrice;
                 uint256 adjustment = Math.max(priceRatio, maxPriceDecay);
                 ctx.swap.amountIn = (ctx.swap.amountIn * adjustment).ceilDiv(1e18);
             }
+        } else {
+            // Pool rich vs reference — tighten taker quote toward oracle (maker-side clamp)
+            if (ctx.query.isExactIn) {
+                uint256 priceRatio = (oraclePrice * 1e18) / currentPrice;
+                uint256 adjustment = Math.max(priceRatio, maxPriceDecay);
+                ctx.swap.amountOut = (ctx.swap.amountOut * adjustment) / 1e18;
+            } else {
+                uint256 priceRatio = (currentPrice * 1e18) / oraclePrice;
+                uint256 adjustment = Math.min(priceRatio, maxIncrease);
+                ctx.swap.amountIn = (ctx.swap.amountIn * adjustment).ceilDiv(1e18);
+            }
         }
-        // If oracle price <= current price, no adjustment (already favorable for taker)
     }
 }

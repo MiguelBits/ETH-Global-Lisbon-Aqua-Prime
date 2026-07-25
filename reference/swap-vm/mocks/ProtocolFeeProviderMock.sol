@@ -20,13 +20,13 @@ import {IProtocolFeeProvider} from "../src/instructions/interfaces/IProtocolFeeP
  * ```solidity
  * bytes memory bytecode = bytes.concat(
  *     // Dynamic protocol fee BEFORE balances
- *     program.build(Opcode.DynamicProtocolFeeAmountIn, abi.encodePacked(address(feeProvider))),
+ *     program.build(_dynamicProtocolFeeAmountInXD, abi.encodePacked(address(feeProvider))),
  *     // Balances instruction
- *     program.build(Opcode.DynamicBalances, BalancesArgsBuilder.build(...)),
+ *     program.build(_dynamicBalancesXD, BalancesArgsBuilder.build(...)),
  *     // Other fees AFTER balances (flat, progressive)
- *     program.build(Opcode.FlatFeeAmountIn, FeeArgsBuilder.buildFlatFee(feeBps)),
+ *     program.build(_flatFeeAmountInXD, FeeArgsBuilder.buildFlatFee(feeBps)),
  *     // Swap instruction
- *     program.build(Opcode.XYCSwap)
+ *     program.build(_xycSwapXD)
  * );
  * ```
  *

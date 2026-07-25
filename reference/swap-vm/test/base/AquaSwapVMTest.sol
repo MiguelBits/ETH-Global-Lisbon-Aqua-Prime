@@ -121,11 +121,10 @@ contract AquaSwapVMTest is AquaStrategyBuilders {
         tokenOut.mint(maker, amountOut);
     }
 
-    function takerData(address takerAddress, bool isExactIn, bool isAToB) internal pure returns (bytes memory) {
+    function takerData(address takerAddress, bool isExactIn) internal pure returns (bytes memory) {
         return TakerTraitsLib.build(TakerTraitsLib.Args({
             taker: takerAddress,
             isExactIn: isExactIn,
-            isAToB: isAToB,
             shouldUnwrapWeth: false,
             hasPreTransferInCallback: true,
             hasPreTransferOutCallback: false,
@@ -167,10 +166,13 @@ contract AquaSwapVMTest is AquaStrategyBuilders {
         SwapProgram memory swapProgram,
         ISwapVM.Order memory order
     ) public returns (uint256, uint256) {
-        bytes memory sigAndTakerData = abi.encodePacked(takerData(address(swapProgram.taker), swapProgram.isExactIn, swapProgram.zeroForOne));
+        bytes memory sigAndTakerData = abi.encodePacked(takerData(address(swapProgram.taker), swapProgram.isExactIn));
+        (address tokenIn, address tokenOut) = getTokenAddresses(swapProgram);
 
         return swapProgram.taker.swap(
             order,
+            tokenIn,
+            tokenOut,
             swapProgram.amount,
             sigAndTakerData
         );
@@ -180,10 +182,13 @@ contract AquaSwapVMTest is AquaStrategyBuilders {
         SwapProgram memory swapProgram,
         ISwapVM.Order memory order
     ) public view returns (uint256, uint256) {
-        bytes memory sigAndTakerData = abi.encodePacked(takerData(address(swapProgram.taker), swapProgram.isExactIn, swapProgram.zeroForOne));
+        (address tokenIn, address tokenOut) = getTokenAddresses(swapProgram);
+        bytes memory sigAndTakerData = abi.encodePacked(takerData(address(swapProgram.taker), swapProgram.isExactIn));
 
         (uint256 amountIn, uint256 amountOut,) = swapVM.asView().quote(
             order,
+            tokenIn,
+            tokenOut,
             swapProgram.amount,
             sigAndTakerData
         );

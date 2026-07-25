@@ -16,7 +16,7 @@ import { SwapVMRouter } from "../../src/routers/SwapVMRouter.sol";
 import { MakerTraitsLib } from "../../src/libs/MakerTraits.sol";
 import { TakerTraitsLib } from "../../src/libs/TakerTraits.sol";
 import { OpcodesDebug } from "../../src/opcodes/OpcodesDebug.sol";
-import { Program, ProgramBuilder, Opcode } from "../utils/ProgramBuilder.sol";
+import { Program, ProgramBuilder } from "../utils/ProgramBuilder.sol";
 import { BalancesArgsBuilder } from "../../src/instructions/Balances.sol";
 import { XYCConcentrateArgsBuilder } from "../../src/instructions/XYCConcentrate.sol";
 import { dynamic } from "../utils/Dynamic.sol";
@@ -47,9 +47,8 @@ contract ConcentrateXYCInvariants is Test, OpcodesDebug, CoreInvariants {
         taker = address(this);
         swapVM = new SwapVMRouter(address(aqua), address(0), address(this), "SwapVM", "1.0.0");
 
-        tokenA = new TokenMock("Token I", "TKI");
-        tokenB = new TokenMock("Token J", "TKJ");
-        if (tokenA > tokenB) (tokenA, tokenB) = (tokenB, tokenA);
+        tokenA = new TokenMock("Token A", "TKA");
+        tokenB = new TokenMock("Token B", "TKB");
 
         // Setup tokens and approvals for maker
         tokenA.mint(maker, 100000e18);
@@ -99,6 +98,8 @@ contract ConcentrateXYCInvariants is Test, OpcodesDebug, CoreInvariants {
         // Execute the swap
         (uint256 actualIn, uint256 actualOut,) = _swapVM.swap(
             order,
+            tokenIn,
+            tokenOut,
             amount,
             takerData
         );
@@ -115,11 +116,14 @@ contract ConcentrateXYCInvariants is Test, OpcodesDebug, CoreInvariants {
         uint256 sqrtPmin = Math.sqrt(0.8e36);
         uint256 sqrtPmax = Math.sqrt(1.25e36);
         (uint256 balanceA, uint256 balanceB) = _concentrateBalances(1000e18, sqrtPmin, sqrtPmax);
-        Program program;
+        Program memory program = ProgramBuilder.init(_opcodes());
         bytes memory bytecode = bytes.concat(
-            program.build(Opcode.DynamicBalances,
-                BalancesArgsBuilder.build([balanceA, balanceB])),
-            program.build(Opcode.XYCConcentrateSwap,
+            program.build(_dynamicBalancesXD,
+                BalancesArgsBuilder.build(
+                    dynamic([address(tokenA), address(tokenB)]),
+                    dynamic([balanceA, balanceB])
+                )),
+            program.build(_xycConcentrateGrowLiquidity2D,
                 XYCConcentrateArgsBuilder.build2D(sqrtPmin, sqrtPmax))
         );
 
@@ -151,11 +155,14 @@ contract ConcentrateXYCInvariants is Test, OpcodesDebug, CoreInvariants {
             uint256 sqrtPmax = Math.sqrt(priceMaxValues[i]);
             (uint256 balanceA, uint256 balanceB) = _concentrateBalances(1000e18, sqrtPmin, sqrtPmax);
             // Test different concentration ranges
-            Program program;
+            Program memory program = ProgramBuilder.init(_opcodes());
             bytes memory bytecode = bytes.concat(
-                program.build(Opcode.DynamicBalances,
-                    BalancesArgsBuilder.build([balanceA, balanceB])),
-                program.build(Opcode.XYCConcentrateSwap,
+                program.build(_dynamicBalancesXD,
+                    BalancesArgsBuilder.build(
+                        dynamic([address(tokenA), address(tokenB)]),
+                        dynamic([balanceA, balanceB])
+                    )),
+                program.build(_xycConcentrateGrowLiquidity2D,
                     XYCConcentrateArgsBuilder.build2D(sqrtPmin, sqrtPmax))
             );
 
@@ -179,8 +186,6 @@ contract ConcentrateXYCInvariants is Test, OpcodesDebug, CoreInvariants {
     function _createOrder(bytes memory program) private view returns (ISwapVM.Order memory) {
         return MakerTraitsLib.build(MakerTraitsLib.Args({
             maker: maker,
-            tokenA: address(tokenA),
-            tokenB: address(tokenB),
             shouldUnwrapWeth: false,
             useAquaInsteadOfSignature: false,
             allowZeroAmountIn: false,
@@ -219,7 +224,6 @@ contract ConcentrateXYCInvariants is Test, OpcodesDebug, CoreInvariants {
             isStrictThresholdAmount: false,
             isFirstTransferFromTaker: false,
             useTransferFromAndAquaPush: false,
-            isAToB: true,
             threshold: thresholdData,
             to: address(this),
             deadline: 0,

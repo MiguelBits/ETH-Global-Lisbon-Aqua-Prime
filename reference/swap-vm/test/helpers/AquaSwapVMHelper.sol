@@ -6,7 +6,7 @@ pragma solidity 0.8.30;
 
 import { TokenMock } from "@1inch/solidity-utils/contracts/mocks/TokenMock.sol";
 
-import { Program, ProgramBuilder, Opcode } from "../utils/ProgramBuilder.sol";
+import { Program, ProgramBuilder } from "../utils/ProgramBuilder.sol";
 
 import { ISwapVM } from "../../src/SwapVM.sol";
 import { AquaSwapVMRouter } from "../../src/routers/AquaSwapVMRouter.sol";
@@ -27,19 +27,17 @@ contract AquaSwapVMHelper is AquaOpcodesDebug {
 
     function createOrder(
         address maker,
-        TokenMock tokenA,
-        TokenMock tokenB
+        TokenMock, // tokenA - unused but kept for interface consistency
+        TokenMock  // tokenB - unused but kept for interface consistency
     ) external view returns (ISwapVM.Order memory) {
-        Program p;
+        Program memory p = ProgramBuilder.init(_opcodes());
         bytes memory programBytes = bytes.concat(
-            p.build(Opcode.XYCSwap),
-            p.build(Opcode.Salt, ControlsArgsBuilder.buildSalt(uint64(uint256(keccak256(abi.encode(block.timestamp))))))
+            p.build(XYCSwap._xycSwapXD),
+            p.build(Controls._salt, ControlsArgsBuilder.buildSalt(uint64(uint256(keccak256(abi.encode(block.timestamp))))))
         );
 
         return MakerTraitsLib.build(MakerTraitsLib.Args({
             maker: maker,
-            tokenA: address(tokenA),
-            tokenB: address(tokenB),
             shouldUnwrapWeth: false,
             useAquaInsteadOfSignature: true,
             allowZeroAmountIn: false,

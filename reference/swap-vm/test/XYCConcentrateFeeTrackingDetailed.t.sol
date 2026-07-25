@@ -9,6 +9,7 @@ pragma solidity 0.8.30;
 ///         to precisely determine in which token fees accumulate
 
 import { Test } from "forge-std/Test.sol";
+import { dynamic } from "./utils/Dynamic.sol";
 import { SafeCast } from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import { TokenMock } from "@1inch/solidity-utils/contracts/mocks/TokenMock.sol";
 import { Aqua } from "@1inch/aqua/src/Aqua.sol";
@@ -23,7 +24,7 @@ import { Fee, FeeArgsBuilder } from "../src/instructions/Fee.sol";
 import { XYCConcentrate, XYCConcentrateArgsBuilder } from "../src/instructions/XYCConcentrate.sol";
 import { Balances, BalancesArgsBuilder } from "../src/instructions/Balances.sol";
 
-import { Program, ProgramBuilder, Opcode } from "./utils/ProgramBuilder.sol";
+import { Program, ProgramBuilder } from "./utils/ProgramBuilder.sol";
 
 contract XYCConcentrateFeeTrackingDetailedTest is Test, OpcodesDebug {
     using SafeCast for uint256;
@@ -74,16 +75,14 @@ contract XYCConcentrateFeeTrackingDetailedTest is Test, OpcodesDebug {
         uint256 sqrtPriceMax,
         uint32 flatFeeBps
     ) internal view returns (ISwapVM.Order memory order, bytes memory signature) {
-        Program program;
+        Program memory program = ProgramBuilder.init(_opcodes());
 
         bytes memory feeInstruction = flatFeeBps > 0
-            ? program.build(Opcode.FlatFeeAmountIn, FeeArgsBuilder.buildFlatFee(flatFeeBps))
+            ? program.build(Fee._flatFeeAmountInXD, FeeArgsBuilder.buildFlatFee(flatFeeBps))
             : bytes("");
 
         order = MakerTraitsLib.build(MakerTraitsLib.Args({
             maker: maker,
-            tokenA: address(tokenETH),
-            tokenB: address(tokenUSD),
             shouldUnwrapWeth: false,
             useAquaInsteadOfSignature: false,
             allowZeroAmountIn: false,
@@ -101,9 +100,12 @@ contract XYCConcentrateFeeTrackingDetailedTest is Test, OpcodesDebug {
             postTransferOutTarget: address(0),
             postTransferOutData: "",
             program: bytes.concat(
-                program.build(Opcode.DynamicBalances, BalancesArgsBuilder.build([uint256(balanceETH), balanceUSD])),
+                program.build(Balances._dynamicBalancesXD, BalancesArgsBuilder.build(
+                    dynamic([address(tokenUSD), address(tokenETH)]),
+                    dynamic([balanceUSD, balanceETH])
+                )),
                 feeInstruction,
-                program.build(Opcode.XYCConcentrateSwap,
+                program.build(XYCConcentrate._xycConcentrateGrowLiquidity2D,
                     XYCConcentrateArgsBuilder.build2D(sqrtPriceMin, sqrtPriceMax)
                 )
             )
@@ -115,10 +117,6 @@ contract XYCConcentrateFeeTrackingDetailedTest is Test, OpcodesDebug {
     }
 
     function _takerData(bool isExactIn, bytes memory sig) internal view returns (bytes memory) {
-        return _takerData(isExactIn, sig, true);
-    }
-
-    function _takerData(bool isExactIn, bytes memory sig, bool isAToB) internal view returns (bytes memory) {
         return TakerTraitsLib.build(TakerTraitsLib.Args({
             taker: taker,
             isExactIn: isExactIn,
@@ -128,7 +126,6 @@ contract XYCConcentrateFeeTrackingDetailedTest is Test, OpcodesDebug {
             isStrictThresholdAmount: false,
             isFirstTransferFromTaker: false,
             useTransferFromAndAquaPush: false,
-            isAToB: isAToB,
             threshold: "",
             to: address(0),
             deadline: 0,
@@ -169,9 +166,8 @@ contract XYCConcentrateFeeTrackingDetailedTest is Test, OpcodesDebug {
         bytes32 mainHash = swapVM.hash(mainOrder);
 
         // Initialization
-        // tokenETH -> tokenUSD: isAToB = true (tokenETH is lower).
         vm.prank(taker);
-        swapVM.swap(mainOrder, 1e18, _takerData(false, mainSig, true));
+        swapVM.swap(mainOrder, tokenETH, tokenUSD, 1e18, _takerData(false, mainSig));
 
         uint256 swapAmountUSD = 1000e18;
         uint256 roundsToTest = 1000;
@@ -189,9 +185,9 @@ contract XYCConcentrateFeeTrackingDetailedTest is Test, OpcodesDebug {
             bytes32 snap1Hash = swapVM.hash(snapshot1);
 
             vm.prank(taker);
-            swapVM.swap(mainOrder, swapAmountUSD, _takerData(false, mainSig, true));
+            swapVM.swap(mainOrder, tokenETH, tokenUSD, swapAmountUSD, _takerData(false, mainSig));
             vm.prank(taker);
-            swapVM.swap(snapshot1, swapAmountUSD, _takerData(false, snap1Sig, true));
+            swapVM.swap(snapshot1, tokenETH, tokenUSD, swapAmountUSD, _takerData(false, snap1Sig));
 
             uint256 mainUSD_after1 = swapVM.balances(mainHash, tokenUSD);
             uint256 mainETH_after1 = swapVM.balances(mainHash, tokenETH);
@@ -208,9 +204,8 @@ contract XYCConcentrateFeeTrackingDetailedTest is Test, OpcodesDebug {
             bytes32 snap2Hash = swapVM.hash(snapshot2);
 
             vm.prank(taker);
-            // tokenUSD -> tokenETH: isAToB = false (tokenUSD is higher).
             (, uint256 ethReceived_main,) = swapVM.swap(
-                mainOrder, swapAmountUSD, _takerData(true, mainSig, false)
+                mainOrder, tokenUSD, tokenETH, swapAmountUSD, _takerData(true, mainSig)
             );
 
             uint256 flatFeeAmount = swapAmountUSD * FLAT_FEE_BPS / BPS;
@@ -218,7 +213,7 @@ contract XYCConcentrateFeeTrackingDetailedTest is Test, OpcodesDebug {
 
             vm.prank(taker);
             (, uint256 ethReceived_snap,) = swapVM.swap(
-                snapshot2, amountInAfterFee, _takerData(true, snap2Sig, false)
+                snapshot2, tokenUSD, tokenETH, amountInAfterFee, _takerData(true, snap2Sig)
             );
 
             assertApproxEqAbs(ethReceived_main, ethReceived_snap, 1e10, "AmountOut mismatch");
@@ -282,9 +277,8 @@ contract XYCConcentrateFeeTrackingDetailedTest is Test, OpcodesDebug {
         );
         bytes32 mainHash = swapVM.hash(mainOrder);
 
-        // tokenETH -> tokenUSD: isAToB = true (tokenETH is lower).
         vm.prank(taker);
-        swapVM.swap(mainOrder, 1e18, _takerData(false, mainSig, true));
+        swapVM.swap(mainOrder, tokenETH, tokenUSD, 1e18, _takerData(false, mainSig));
 
         uint256 swapAmountETH = 0.3e18;
         uint256 roundsToTest = 10;
@@ -302,10 +296,9 @@ contract XYCConcentrateFeeTrackingDetailedTest is Test, OpcodesDebug {
             bytes32 snap1Hash = swapVM.hash(snapshot1);
 
             vm.prank(taker);
-            // tokenUSD -> tokenETH: isAToB = false (tokenUSD is higher).
-            swapVM.swap(mainOrder, swapAmountETH, _takerData(false, mainSig, false));
+            swapVM.swap(mainOrder, tokenUSD, tokenETH, swapAmountETH, _takerData(false, mainSig));
             vm.prank(taker);
-            swapVM.swap(snapshot1, swapAmountETH, _takerData(false, snap1Sig, false));
+            swapVM.swap(snapshot1, tokenUSD, tokenETH, swapAmountETH, _takerData(false, snap1Sig));
 
             uint256 mainUSD_after1 = swapVM.balances(mainHash, tokenUSD);
             uint256 mainETH_after1 = swapVM.balances(mainHash, tokenETH);
@@ -322,13 +315,12 @@ contract XYCConcentrateFeeTrackingDetailedTest is Test, OpcodesDebug {
             bytes32 snap2Hash = swapVM.hash(snapshot2);
 
             vm.prank(taker);
-            // tokenETH -> tokenUSD: isAToB = true (tokenETH is lower).
-            swapVM.swap(mainOrder, swapAmountETH, _takerData(true, mainSig, true));
+            swapVM.swap(mainOrder, tokenETH, tokenUSD, swapAmountETH, _takerData(true, mainSig));
 
             uint256 flatFeeAmount = swapAmountETH * FLAT_FEE_BPS / BPS;
             uint256 amountInAfterFee = swapAmountETH - flatFeeAmount;
             vm.prank(taker);
-            swapVM.swap(snapshot2, amountInAfterFee, _takerData(true, snap2Sig, true));
+            swapVM.swap(snapshot2, tokenETH, tokenUSD, amountInAfterFee, _takerData(true, snap2Sig));
 
             uint256 mainUSD_after2 = swapVM.balances(mainHash, tokenUSD);
             uint256 mainETH_after2 = swapVM.balances(mainHash, tokenETH);
