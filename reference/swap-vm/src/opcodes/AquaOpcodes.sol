@@ -17,6 +17,7 @@ import { Extruction } from "../instructions/Extruction.sol";
 import { PeggedSwap } from "../instructions/PeggedSwap.sol";
 import { SolvencyGuard } from "../instructions/SolvencyGuard.sol";
 import { OraclePriceAdjuster } from "../instructions/OraclePriceAdjuster.sol";
+import { SkewPricer } from "../instructions/SkewPricer.sol";
 
 contract AquaOpcodes is
     Controls,
@@ -27,14 +28,15 @@ contract AquaOpcodes is
     PeggedSwap,
     Extruction,
     SolvencyGuard,
-    OraclePriceAdjuster
+    OraclePriceAdjuster,
+    SkewPricer
 {
     constructor(address aqua) Fee(aqua) {}
 
     function _notInstruction(Context memory /* ctx */, bytes calldata /* args */) internal view {}
 
     function _opcodes() internal pure virtual returns (function(Context memory, bytes calldata) internal[] memory result) {
-        function(Context memory, bytes calldata) internal[35] memory instructions = [
+        function(Context memory, bytes calldata) internal[37] memory instructions = [
             _notInstruction,
             // Debug - reserved for debugging utilities (core infrastructure)
             _notInstruction,
@@ -75,8 +77,11 @@ contract AquaOpcodes is
             Fee._aquaDynamicProtocolFeeAmountInXD,
             PeggedSwap._peggedSwapGrowPriceRange2D,
             Extruction._extruction,
-            // Oracle clamp appended at END for backward-compatible opcode indices.
-            OraclePriceAdjuster._oraclePriceAdjuster1D
+            // Aqua Prime: appended at END for backward-compatible opcode indices. Clamp + skew adjusters
+            // run AFTER the swap instruction; never reorder the entries above.
+            OraclePriceAdjuster._oraclePriceAdjuster1D,
+            SkewPricer._skewPricer,
+            SkewPricer._skewPricerValue
         ];
 
         // Efficiently turning static memory array into dynamic memory array
