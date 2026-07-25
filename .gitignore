@@ -1,0 +1,47 @@
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Foundry / Solidity build artifacts
+out/
+cache/
+cache_forge/
+artifacts/
+broadcast/
+**/out/
+**/cache/
+**/cache_forge/
+**/artifacts/
+**/broadcast/
+
+# Next.js / frontend build
+.next/
+dist/
+coverage/
+**/.next/
+**/dist/
+*.tsbuildinfo
+
+# Local key material
+**/deployments/*key*
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!**/.env.example
+
+# Local runtime logs / pids
+*.log
+*.pid
+.anvil-*.log
+.anvil-*.pid
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/
