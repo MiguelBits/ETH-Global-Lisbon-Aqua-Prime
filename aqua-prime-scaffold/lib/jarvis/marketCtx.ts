@@ -53,6 +53,7 @@ export function buildProposeMarketCtx(args: {
       amountHuman: s.amountHuman,
       winnerLabel: s.winnerLabel,
       skewAfter: s.skewAfter,
+      poolVsMarkBpsAfter: s.poolVsMarkBpsAfter,
     })),
   }
 

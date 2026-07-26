@@ -166,7 +166,13 @@ export const AQUA_GLOSSARY: GlossaryEntry[] = [
     id: "bestAction",
     label: "best action",
     aliases: ["Best action", "best action", "do best action"],
-    tip: "Desk best-action: size × side that maximizes HEAL surplus over BASELINE (extra output vs the k≈0 branch).",
+    tip: "Desk best-action (profit): size × side that maximizes HEAL surplus over BASELINE — not oracle convergence.",
+  },
+  {
+    id: "healAction",
+    label: "heal action",
+    aliases: ["Heal action", "heal action", "do heal action"],
+    tip: "Oracle-convergence plan: clips that shrink |pool mid − Chainlink| toward ±50 bps. Execute one-by-one; re-plans after each swap.",
   },
   {
     id: "0g",

@@ -21,7 +21,14 @@ export type HealPathCtx = {
   startSkew: number
   endSkew: number
   healthy: boolean
-  steps: { index: number; sellBase: boolean; amountHuman: string; winnerLabel: string; skewAfter: number }[]
+  steps: {
+    index: number
+    sellBase: boolean
+    amountHuman: string
+    winnerLabel: string
+    skewAfter: number
+    poolVsMarkBpsAfter?: number
+  }[]
 }
 
 export type ProposeMarketCtx = {
