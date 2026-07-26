@@ -43,6 +43,13 @@ export const AQUA_ACTIONS: AquaAction[] = [
     tip: "Same as /desk: pick size × side that maximizes HEAL surplus over BASELINE, set the ticket, arm Best settings.",
   },
   {
+    id: "heal-action",
+    label: "Heal action",
+    utterance: "heal action",
+    when: "awake",
+    tip: "One or more clips that move pool mid toward Chainlink (±50 bps). Arms clip 1; Execute one swap at a time, then re-plans.",
+  },
+  {
     id: "best-route",
     label: "Best route",
     utterance: "pick the best route",
