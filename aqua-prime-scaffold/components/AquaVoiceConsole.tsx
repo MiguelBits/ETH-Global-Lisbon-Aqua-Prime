@@ -39,6 +39,7 @@ import { nextChipForStep, resolveDemoStep } from "~~/lib/jarvis/demoFlow"
 import { HIDDEN_PANELS, hudLayoutClass, panelsForKind, type AquaHudPanels } from "~~/lib/jarvis/aquaPanels"
 import { useAquaRoutes } from "~~/lib/jarvis/useAquaRoutes"
 import type { HealSimResult } from "~~/lib/jarvis/healSim"
+import { healActionToSim, runHealPathSimulation } from "~~/lib/jarvis/healSim"
 import type { MakerSorPick } from "~~/lib/jarvis/makerSor"
 import type { JarvisProposal } from "~~/lib/jarvis/schema"
 import { defaultAgentName, resolveAgentEns, resolvePrincipalEns } from "~~/lib/ens"
@@ -415,6 +416,22 @@ export const AquaVoiceConsole = () => {
           setSellBase(action.sellBase)
           setAmountIn(action.amountHuman)
         },
+        onHealAction: action => {
+          setAdvisePhase("idle")
+          setSorPick(null)
+          setSellBase(action.sellBase)
+          setAmountIn(action.amountHuman)
+          const snap = bookRef.current
+          if (snap) {
+            setHealSim(
+              healActionToSim(action, { balBase: snap.balBase, balQuote: snap.balQuote }),
+            )
+            setHealClipIdx(0)
+            setHealAnimDone(false)
+          } else {
+            setHealSim(null)
+          }
+        },
       })
 
       if (result.proposal) setProposal(result.proposal)
@@ -424,6 +441,19 @@ export const AquaVoiceConsole = () => {
       if (result.bestAction) {
         setSellBase(result.bestAction.sellBase)
         setAmountIn(result.bestAction.amountHuman)
+      }
+      if (result.healAction) {
+        setSellBase(result.healAction.sellBase)
+        setAmountIn(result.healAction.amountHuman)
+        const snap = bookRef.current
+        if (snap) {
+          setHealSim(
+            healActionToSim(result.healAction, {
+              balBase: snap.balBase,
+              balQuote: snap.balQuote,
+            }),
+          )
+        }
       }
 
       if (result.kind === "book") {
@@ -457,7 +487,7 @@ export const AquaVoiceConsole = () => {
         }
       }
 
-      // After Best route / Best size / Best action: arm Best settings so Execute is one click away.
+      // After Best route / Best size / Best action / Heal action: arm Best settings so Execute is one click away.
       const armTicket =
         (result.sorPick && (result.kind === "route" || result.kind === "optimize")
           ? {
@@ -465,6 +495,16 @@ export const AquaVoiceConsole = () => {
               amountIn: result.sorPick.amountIn,
               label: result.kind === "optimize" ? "Best size" : "Best route",
               liveWinner: result.sorPick.liveWinner,
+              showHealPath: false,
+            }
+          : null) ??
+        (result.healAction && result.kind === "action"
+          ? {
+              sellBase: result.healAction.sellBase,
+              amountIn: result.healAction.amountInWei,
+              label: "Heal action",
+              liveWinner: "HEAL",
+              showHealPath: true,
             }
           : null) ??
         (result.bestAction && result.kind === "action"
@@ -473,6 +513,7 @@ export const AquaVoiceConsole = () => {
               amountIn: result.bestAction.amountInWei,
               label: "Best action",
               liveWinner: "HEAL",
+              showHealPath: false,
             }
           : null)
 
@@ -488,7 +529,7 @@ export const AquaVoiceConsole = () => {
             routes: true,
             sor: result.kind !== "action",
             execute: true,
-            healSim: false,
+            healSim: !!armTicket.showHealPath,
             advise: false,
           }))
           try {
@@ -799,25 +840,72 @@ export const AquaVoiceConsole = () => {
         onStatus: setExecNote,
       })
 
-      const nextClip = healClipIdx + 1
-      if (healSim && nextClip < healSim.steps.length) {
-        beatOutcome("success")
-        await aquaSpeak(
-          `Clip ${healClipIdx + 1} settled. Next clip armed.`,
-        )
-        setProposal(null)
-        await armHealClip(healSim, nextClip)
+      // After a heal clip: re-read live reserves and re-plan remaining oracle convergence.
+      if (healSim) {
+        const snap = bookRef.current
+        let balBase = snap?.balBase ?? 0n
+        let balQuote = snap?.balQuote ?? 0n
+        const ethUsd1e18 = snap?.ethUsd1e18 ?? 0n
+        try {
+          const live = (await publicClient.readContract({
+            address: gateway,
+            abi: contracts.AquaPrimeSwapGateway.abi,
+            functionName: "virtualBalances",
+          })) as readonly [bigint, bigint]
+          balBase = live[0]
+          balQuote = live[1]
+          if (snap) {
+            setBalances({
+              balBase,
+              balQuote,
+              ethUsd1e18: snap.ethUsd1e18,
+              source: "live",
+            })
+            bookRef.current = {
+              ...snap,
+              balBase,
+              balQuote,
+              source: "live",
+            }
+          }
+        } catch {
+          // fall back to last known book
+        }
+
+        const fresh =
+          ethUsd1e18 > 0n
+            ? runHealPathSimulation({ book: { balBase, balQuote }, ethUsd1e18 })
+            : null
+        if (fresh && fresh.steps.length > 0) {
+          beatOutcome("success")
+          setHealSim(fresh)
+          setHealClipIdx(0)
+          setHealAnimDone(true)
+          setProposal(null)
+          await aquaSpeak(
+            `Clip settled. ${fresh.steps.length} more toward Chainlink — arming next.`,
+          )
+          await armHealClip(fresh, 0)
+        } else {
+          setSettledOnce(true)
+          beatOutcome("success")
+          await aquaSpeak(
+            fresh?.healthy
+              ? "Pool within 50 bps of Chainlink sir."
+              : "Heal path complete sir.",
+          )
+          setProposal(null)
+          setCalcPhase("idle")
+          setHealSim(null)
+          setHealClipIdx(0)
+          setHealAnimDone(false)
+        }
       } else {
         setSettledOnce(true)
         beatOutcome("success")
-        await aquaSpeak(
-          healSim ? "Heal path complete sir." : "Trade settled sir.",
-        )
+        await aquaSpeak("Trade settled sir.")
         setProposal(null)
         setCalcPhase("idle")
-        setHealSim(null)
-        setHealClipIdx(0)
-        setHealAnimDone(false)
       }
     } catch (e) {
       const msg = formatCommitError(e)
