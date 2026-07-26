@@ -119,7 +119,12 @@ const StepRow = ({
       </p>
       <p className="aqua-healsim-skew">
         <AquaTerm id="skew">skew</AquaTerm> {fmtSkew(step.skewBefore)} → {fmtSkew(step.skewAfter)}
-        <span className="aqua-healsim-gain"> · +{healGain.toFixed(0)}% fuel</span>
+        <span className="aqua-healsim-gain">
+          {" "}
+          · pool {step.poolVsMarkBpsBefore >= 0 ? "+" : ""}
+          {step.poolVsMarkBpsBefore.toFixed(0)}→{step.poolVsMarkBpsAfter >= 0 ? "+" : ""}
+          {step.poolVsMarkBpsAfter.toFixed(0)} bps
+        </span>
       </p>
     </li>
   )
@@ -289,7 +294,19 @@ export const AquaHealSimPanel = ({
             From live <AquaTerm id="book">book</AquaTerm>
           </>
         )}{" "}
-        · target ±{HEALTHY_SKEW_PCT}% <AquaTerm id="skew">skew</AquaTerm>
+        · target ±50 bps vs <AquaTerm id="mark">Chainlink</AquaTerm>
+        {result.startVsMarkBps != null ? (
+          <span className="aqua-healsim-skew-inline">
+            {" "}
+            · start {result.startVsMarkBps >= 0 ? "+" : ""}
+            {result.startVsMarkBps.toFixed(0)} bps
+          </span>
+        ) : (
+          <>
+            {" "}
+            · ±{HEALTHY_SKEW_PCT}% <AquaTerm id="skew">skew</AquaTerm>
+          </>
+        )}
       </p>
       <p className="aqua-healsim-book">
         Start <strong className="aqua-holo-num">{formatHealSimBook(result.startBook)}</strong>
