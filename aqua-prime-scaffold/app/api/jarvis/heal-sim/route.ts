@@ -33,6 +33,7 @@ export async function POST(req: NextRequest) {
         amountHuman: s.amountHuman,
         winnerLabel: s.winnerLabel,
         skewAfter: s.skewAfter,
+        poolVsMarkBpsAfter: s.poolVsMarkBpsAfter,
       })),
     }
 
@@ -54,6 +55,8 @@ export async function POST(req: NextRequest) {
         usedScenarioBook: sim.usedScenarioBook,
         startSkew: sim.startSkew,
         endSkew: sim.endSkew,
+        startVsMarkBps: sim.startVsMarkBps,
+        endVsMarkBps: sim.endVsMarkBps,
         healthy: sim.healthy,
         startBook: {
           balBase: sim.startBook.balBase.toString(),
@@ -72,6 +75,10 @@ export async function POST(req: NextRequest) {
           winnerLabel: s.winnerLabel,
           skewBefore: s.skewBefore,
           skewAfter: s.skewAfter,
+          poolVsMarkBpsBefore: s.poolVsMarkBpsBefore,
+          poolVsMarkBpsAfter: s.poolVsMarkBpsAfter,
+          midBefore: s.midBefore,
+          midAfter: s.midAfter,
           params: {
             healK: s.params.healK.toString(),
             maxAdjustment: s.params.maxAdjustment.toString(),
