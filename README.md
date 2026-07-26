@@ -91,6 +91,15 @@ Headers: x-api-key, x-universal-router-version: 2.0
 Body:    type=EXACT_INPUT, tokenIn/tokenOut = mainnet WETH <-> USDC
 ```
 
+**Call sites (line-anchored):**
+
+| What | Where |
+|------|-------|
+| Trade API URL constant | [`tapeIntel.ts#L8`](aqua-prime-scaffold/lib/jarvis/tapeIntel.ts#L8) |
+| `fetch(QUOTE_URL, …)` CLASSIC + BEST_PRICE | [`tapeIntel.ts#L178`](aqua-prime-scaffold/lib/jarvis/tapeIntel.ts#L178) |
+| `fetchTapeIntel` pack for Jarvis / 0G | [`tapeIntel.ts#L236`](aqua-prime-scaffold/lib/jarvis/tapeIntel.ts#L236) |
+| Desk/UI quote route (`/api/uniswap-quote`) | [`uniswap-quote/route.ts#L9`](aqua-prime-scaffold/app/api/uniswap-quote/route.ts#L9) |
+
 **Two quotes per ticket (parallel).** For the on-screen size and side we fetch:
 
 | Preference | Role |
@@ -112,7 +121,7 @@ Body:    type=EXACT_INPUT, tokenIn/tokenOut = mainnet WETH <-> USDC
 
 **Where it shows up.**
 
-1. **Desk tape** - `/api/uniswap-quote` feeds the terminal reference mid (`TradeTapePanel`).
+1. **Desk tape** - [`/api/uniswap-quote`](aqua-prime-scaffold/app/api/uniswap-quote/route.ts#L9) feeds the terminal reference mid (`TradeTapePanel`).
 2. **Jarvis consult** - `TapeIntel` is injected as `uniswapTape` into local heuristics ([`fallback.ts`](aqua-prime-scaffold/lib/jarvis/fallback.ts)) and the 0G prompt ([`prompt.ts`](aqua-prime-scaffold/lib/jarvis/prompt.ts)). Critique re-runs if desk edge vs CLASSIC is worse than -8 bps.
 3. **UI strip** - impact, route, edge, thin/filler flags on the Jarvis console.
 
