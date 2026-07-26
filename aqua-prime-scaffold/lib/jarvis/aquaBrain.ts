@@ -5,6 +5,7 @@
 
 import { formatUnits } from "viem"
 import { computeBestAction, type BestAction } from "~~/lib/bestAction"
+import { evaluateOracleConvergence, type HealAction } from "~~/lib/healAction"
 import { AQUA_SLEEP } from "./aquaSoul"
 import { runHealPathSimulation, type HealSimResult, type HealSimStep } from "./healSim"
 import {
@@ -58,6 +59,7 @@ export type AquaBrainResult = {
   advise?: AdviseVerdict
   sorPick?: MakerSorPick
   bestAction?: BestAction
+  healAction?: HealAction
 }
 
 export type AdviseVerdict = {
@@ -81,6 +83,7 @@ export type AquaBrainContext = {
   onAdviseResult?: (verdict: AdviseVerdict | null) => void
   onSorPick?: (pick: MakerSorPick) => void
   onBestAction?: (action: BestAction) => void
+  onHealAction?: (action: HealAction) => void
 }
 
 const bookPayload = (book: AquaBookSnapshot, principalEns?: string | null) => ({
@@ -233,27 +236,43 @@ const parseHealSimResponse = (json: {
     }[]
   }
 }): HealSimResult => {
-  const steps: HealSimStep[] = json.sim.steps.map(s => ({
-    index: s.index,
-    sellBase: s.sellBase,
-    amountHuman: s.amountHuman,
-    amountInWei: BigInt(s.amountInWei),
-    amountOut: BigInt(s.amountOut),
-    winnerLabel: s.winnerLabel,
-    skewBefore: s.skewBefore,
-    skewAfter: s.skewAfter,
-    params: clampDeskSet({
-      healK: BigInt(s.params.healK),
-      maxAdjustment: BigInt(s.params.maxAdjustment),
-      healPremium: BigInt(s.params.healPremium),
-      lambda: BigInt(s.params.lambda),
-      deadline: BigInt(s.params.deadline),
-      attestation: s.params.attestation as `0x${string}`,
-    }),
-    balBaseAfter: BigInt(s.balBaseAfter),
-    balQuoteAfter: BigInt(s.balQuoteAfter),
-    label: s.label,
-  }))
+  const steps: HealSimStep[] = json.sim.steps.map(s => {
+    const row = s as typeof s & {
+      poolVsMarkBpsBefore?: number
+      poolVsMarkBpsAfter?: number
+      midBefore?: number
+      midAfter?: number
+    }
+    return {
+      index: s.index,
+      sellBase: s.sellBase,
+      amountHuman: s.amountHuman,
+      amountInWei: BigInt(s.amountInWei),
+      amountOut: BigInt(s.amountOut),
+      winnerLabel: s.winnerLabel,
+      skewBefore: s.skewBefore,
+      skewAfter: s.skewAfter,
+      poolVsMarkBpsBefore: row.poolVsMarkBpsBefore ?? 0,
+      poolVsMarkBpsAfter: row.poolVsMarkBpsAfter ?? 0,
+      midBefore: row.midBefore ?? 0,
+      midAfter: row.midAfter ?? 0,
+      params: clampDeskSet({
+        healK: BigInt(s.params.healK),
+        maxAdjustment: BigInt(s.params.maxAdjustment),
+        healPremium: BigInt(s.params.healPremium),
+        lambda: BigInt(s.params.lambda),
+        deadline: BigInt(s.params.deadline),
+        attestation: s.params.attestation as `0x${string}`,
+      }),
+      balBaseAfter: BigInt(s.balBaseAfter),
+      balQuoteAfter: BigInt(s.balQuoteAfter),
+      label: s.label,
+    }
+  })
+  const simExtra = json.sim as typeof json.sim & {
+    startVsMarkBps?: number | null
+    endVsMarkBps?: number | null
+  }
   return {
     usedScenarioBook: json.sim.usedScenarioBook,
     startBook: {
@@ -266,6 +285,8 @@ const parseHealSimResponse = (json: {
     },
     startSkew: json.sim.startSkew,
     endSkew: json.sim.endSkew,
+    startVsMarkBps: simExtra.startVsMarkBps ?? null,
+    endVsMarkBps: simExtra.endVsMarkBps ?? null,
     steps,
     healthy: json.sim.healthy,
     narrative: json.narrative,
@@ -313,6 +334,7 @@ export const runAquaBrain = async (userText: string, ctx: AquaBrainContext): Pro
       advise?: AdviseVerdict
       sorPick?: MakerSorPick
       bestAction?: BestAction
+      healAction?: HealAction
     },
   ): AquaBrainResult => ({
     reply: stripCommaBeforeSir(reply),
@@ -322,6 +344,7 @@ export const runAquaBrain = async (userText: string, ctx: AquaBrainContext): Pro
     ...(extra?.advise ? { advise: extra.advise } : {}),
     ...(extra?.sorPick ? { sorPick: extra.sorPick } : {}),
     ...(extra?.bestAction ? { bestAction: extra.bestAction } : {}),
+    ...(extra?.healAction ? { healAction: extra.healAction } : {}),
   })
 
   if (/stand by|go to sleep|goodnight|power down/.test(lower)) {
@@ -357,6 +380,27 @@ export const runAquaBrain = async (userText: string, ctx: AquaBrainContext): Pro
     const enriched = { ...advise, line }
     ctx.onAdviseResult?.(enriched)
     return out(line, "advise", { advise: enriched })
+  }
+
+  if (
+    (/heal action|do heal action/.test(lower) &&
+      !/best (heal )?action|max(imize)? heal (surplus|edge)/.test(lower)) ||
+    /do heal (trade|clip)/.test(lower)
+  ) {
+    const decision = evaluateOracleConvergence({
+      book: { balBase: ctx.book.balBase, balQuote: ctx.book.balQuote },
+      ethUsd1e18: ctx.book.ethUsd1e18,
+    })
+    if (decision.kind === "hold") {
+      return out(`Certainly sir. Hold — ${decision.reason}.`, "action")
+    }
+    ctx.onHealAction?.(decision)
+    const n = decision.steps.length
+    return out(
+      `Certainly sir. ${decision.narrative} Execute clip 1 of ${n}.`,
+      "action",
+      { healAction: decision },
+    )
   }
 
   if (
@@ -477,7 +521,7 @@ export const runAquaBrain = async (userText: string, ctx: AquaBrainContext): Pro
   }
 
   return out(
-    "Ask Best action, Best route, Best settings, or Execute sir.",
+    "Ask Heal action, Best action, Best route, Best settings, or Execute sir.",
     "generic",
   )
 }
