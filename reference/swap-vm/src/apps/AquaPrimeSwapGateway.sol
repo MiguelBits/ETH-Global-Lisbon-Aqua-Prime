@@ -63,7 +63,7 @@ contract AquaPrimeSwapGateway is ITakerCallbacks {
         DeskSet initialDeskSet;
     }
 
-    /// @notice Emitted once when the maker records the initial desk ship (subgraph anchor).
+    /// @notice Emitted once when the maker records the initial desk ship.
     event DeskShipped(
         address indexed maker,
         bytes32 indexed strategyHash,
@@ -99,7 +99,7 @@ contract AquaPrimeSwapGateway is ITakerCallbacks {
         bytes32 attestation
     );
 
-    /// @notice Emitted on every routed swap (trade blotter feed).
+    /// @notice Emitted on every routed swap.
     event SwapRouted(
         address indexed maker,
         address indexed taker,
@@ -394,7 +394,7 @@ contract AquaPrimeSwapGateway is ITakerCallbacks {
         return abi.encode(_pendingOrder);
     }
 
-    /// @notice One-time desk registration for subgraph indexing (callable by maker after ship).
+    /// @notice One-time desk registration (callable by maker after ship).
     function recordDeskShipped(uint256 baseBal, uint256 quoteBal, string calldata ensName) external {
         if (msg.sender != MAKER) revert AquaPrimeGatewayOnlyMaker();
         if (deskRecorded) revert AquaPrimeGatewayDeskAlreadyRecorded();

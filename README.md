@@ -12,11 +12,10 @@ ETHGlobal hackathon project. Self-custodied WETH/USDC book. Jarvis is a voice de
 |-------|-------------|-------|
 | **SkewPricer** (custom SwapVM opcode) | Shades quote by virtual-balance imbalance so trades heal the book (bounded, oracle-normalized) | [`reference/swap-vm/src/instructions/SkewPricer.sol`](reference/swap-vm/src/instructions/SkewPricer.sol) |
 | **PrimeSelector** (maker SOR) | Extruction target: runs candidate programs on one book, picks by `takerValue - λ·\|postSkew\|` | [`reference/swap-vm/src/apps/PrimeSelector.sol`](reference/swap-vm/src/apps/PrimeSelector.sol) |
-| **AquaPrimeSwapGateway** | Quote + swap, desk-set lifecycle (`stageDeskSet` → Aqua dock/ship → `finalizeDeskSet`), on-chain 0G attestation, blotter events | [`reference/swap-vm/src/apps/AquaPrimeSwapGateway.sol`](reference/swap-vm/src/apps/AquaPrimeSwapGateway.sol) |
+| **AquaPrimeSwapGateway** | Quote + swap, desk-set lifecycle (`stageDeskSet` → Aqua dock/ship → `finalizeDeskSet`), on-chain 0G attestation | [`reference/swap-vm/src/apps/AquaPrimeSwapGateway.sol`](reference/swap-vm/src/apps/AquaPrimeSwapGateway.sol) |
 | **Jarvis** | Voice console; Uniswap TapeIntel retunes heal knobs (0G or local); commit on-chain | [`aqua-prime-scaffold/lib/jarvis/`](aqua-prime-scaffold/lib/jarvis) |
 | **ENS soul** | `jarvis.primedesk.eth` text records + agent card; `maker.primedesk.eth` for the desk | [`docs/ENS_SETUP.md`](docs/ENS_SETUP.md) |
 | **Terminal** | `/desk` terminal + `/jarvis` console | [`aqua-prime-scaffold/`](aqua-prime-scaffold) |
-| **Subgraph** | Indexes desk/swap events for the blotter | [`subgraph/`](subgraph) |
 
 ## Architecture
 
@@ -45,7 +44,6 @@ flowchart TB
 
     OG --> GW
     TAKER["Taker / MetaMask"] --> GW
-    SUB["The Graph"] --- GW
 ```
 
 **Demo flow**
@@ -53,7 +51,7 @@ flowchart TB
 1. Maker ships WETH/USDC virtual balances to Aqua once. Tokens stay in the wallet until a swap settles.
 2. Talk to Jarvis (or Consult Jarvis). It pulls Uniswap CLASSIC + BEST_PRICE, builds TapeIntel, proposes desk knobs via 0G or local heuristics.
 3. Execute: `stageDeskSet` → Aqua `dock`/`ship` → `finalizeDeskSet` → `swapExactIn`.
-4. SwapVM races BASELINE vs HEAL; selector picks; Aqua settles; blotter updates.
+4. SwapVM races BASELINE vs HEAL; selector picks; Aqua settles.
 
 The AI does not invent prices. It only turns bounded knobs. Caps live in the gateway (`MAX_HEAL_K`, `MAX_ADJUSTMENT`, `MAX_HEAL_PREMIUM`, λ range). Tests enforce `quoteExactIn == swapExactIn`.
 
@@ -62,7 +60,7 @@ The AI does not invent prices. It only turns bounded knobs. Caps live in the gat
 ### 1inch (Aqua / SwapVM)
 
 - Custom opcode `SkewPricer` at the end of `AquaOpcodes` (backward compatible); router redeployed.
-- `PrimeSelector` as extruction: same scoring for quote and swap; transient route for blotter events.
+- `PrimeSelector` as extruction: same scoring for quote and swap; transient route for gateway events.
 - Aqua SLAC as intended: one wallet book; retunes via `dock` + `ship`; `safeBalances`.
 - Demo against canonical mainnet Aqua `0x4a055AA172C98ec32de118B9B5b6AC8B4099A580` on a fork.
 - On-chain ERC20 movement in fork tests and the live demo.
@@ -86,10 +84,6 @@ The AI does not invent prices. It only turns bounded knobs. Caps live in the gat
 - CLASSIC + BEST_PRICE quotes → TapeIntel (impact, route, gas, edge).
 - Jarvis retunes heal knobs from that tape; Aqua settles.
 - Feedback: [`aqua-prime-scaffold/FEEDBACK.md`](aqua-prime-scaffold/FEEDBACK.md).
-
-### The Graph
-
-- Subgraph indexes `DeskShipped`, `DeskSetCommitted`, `SwapRouted` when `NEXT_PUBLIC_SUBGRAPH_URL` is set.
 
 ## Proof
 
@@ -127,7 +121,6 @@ Demo notes: [`DEMO.md`](DEMO.md).
 ```
 reference/swap-vm/       # SwapVM fork + SkewPricer, PrimeSelector, gateway, tests, deploy
 aqua-prime-scaffold/     # Next.js desk + Jarvis
-subgraph/                # blotter indexer
 scripts/                 # one-command fork demo
 docs/                    # ENS setup + diagrams
 DEMO.md

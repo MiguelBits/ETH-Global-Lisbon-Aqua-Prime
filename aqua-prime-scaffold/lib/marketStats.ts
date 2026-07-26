@@ -1,12 +1,19 @@
 /**
- * Realized volatility + flow stats from Aqua Prime subgraph fills and Uniswap reference.
+ * Realized volatility + flow stats from recent fills and Uniswap reference.
+ * Fills are optional (session/local); Uniswap mid still drives reference stats.
  */
 
-import type { BlotterSwap } from "./subgraph";
 import { midUsdcPerWeth } from "./branchBook";
 
+export type FillSample = {
+  amountIn: string;
+  sellBase: boolean;
+  baseBalAfter: string;
+  quoteBalAfter: string;
+};
+
 export type MarketStats = {
-  /** Stddev of mid price (USDC/WETH) from recent Prime fills, as fraction (e.g. 0.02 = 2%). */
+  /** Stddev of mid price (USDC/WETH) from recent fills, as fraction (e.g. 0.02 = 2%). */
   realizedVol: number;
   /** Net sell-base flow as fraction of book (positive = more WETH sold). */
   flowImbalance: number;
@@ -19,13 +26,13 @@ export type MarketStats = {
 };
 
 export function computeMarketStats(
-  swaps: BlotterSwap[],
+  fills: FillSample[],
   uniswapAmountOut: bigint | null,
   uniswapAmountIn: bigint = 10n ** 18n,
 ): MarketStats {
   const mids: number[] = [];
 
-  for (const s of swaps) {
+  for (const s of fills) {
     const base = BigInt(s.baseBalAfter);
     const quote = BigInt(s.quoteBalAfter);
     const mid = midUsdcPerWeth(base, quote);
@@ -49,7 +56,7 @@ export function computeMarketStats(
 
   let sellBaseVol = 0n;
   let buyBaseVol = 0n;
-  for (const s of swaps.slice(0, 10)) {
+  for (const s of fills.slice(0, 10)) {
     const amt = BigInt(s.amountIn);
     if (s.sellBase) sellBaseVol += amt;
     else buyBaseVol += amt;

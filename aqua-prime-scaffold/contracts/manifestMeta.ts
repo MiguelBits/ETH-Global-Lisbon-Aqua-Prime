@@ -17,7 +17,6 @@ export const primeDeskManifest = {
   chainlinkEthUsd: "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419" as const,
   ensName: "maker.primedesk.eth" as const,
   jarvisEns: "jarvis.primedesk.eth" as const,
-  subgraphUrl: "",
   sampleQuoteOut1Eth: 1870536729,
   mintable: false,
   deployed: true,

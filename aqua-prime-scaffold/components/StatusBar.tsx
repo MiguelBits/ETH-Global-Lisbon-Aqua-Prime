@@ -7,7 +7,6 @@ import { primeDeskManifest } from "~~/contracts/manifestMeta";
 
 const TARGET = scaffoldConfig.targetNetworks[0];
 const IS_SEPOLIA = TARGET.id === 11155111;
-const SUBGRAPH_ON = Boolean(process.env.NEXT_PUBLIC_SUBGRAPH_URL);
 
 function Feed({ label, on }: { label: string; on: boolean }) {
   return (
@@ -49,7 +48,6 @@ export function StatusBar() {
       </span>
 
       <Feed label="SwapVM" on={primeDeskManifest.deployed} />
-      <Feed label="Subgraph" on={SUBGRAPH_ON} />
 
       <span className="hidden items-center gap-1.5 sm:inline-flex">
         <span className="term-label">DESK</span>

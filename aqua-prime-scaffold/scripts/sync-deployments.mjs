@@ -40,7 +40,6 @@ const rpcUrl = manifest.rpcUrl ?? (chainId === 11155111 ? "https://rpc.sepolia.o
 const ensName = manifest.ensName ?? "maker.primedesk.eth";
 const chainlinkEthUsd = manifest.chainlinkEthUsd ?? "0x694AA1769357215DE4FAC081bf1f309aDC325306";
 const sampleQuote1Eth = manifest.sampleQuoteOut1Eth ?? manifest.sampleQuoteOut10kUsdc ?? null;
-const subgraphUrl = process.env.NEXT_PUBLIC_SUBGRAPH_URL ?? "";
 const mintable = manifest.mintableTokens === true;
 const wethAbiName = mintable ? "faucetTokenAbi" : "wethAbi";
 const usdcAbiName = mintable ? "faucetTokenAbi" : "erc20Abi";
@@ -92,7 +91,6 @@ export const primeDeskManifest = {
   chainlinkEthUsd: "${chainlinkEthUsd}" as const,
   ensName: "${ensName}" as const,
   jarvisEns: "${manifest.jarvisEns ?? "jarvis.primedesk.eth"}" as const,
-  subgraphUrl: "${subgraphUrl}",
   sampleQuoteOut1Eth: ${sampleQuote1Eth ?? "null"},
   mintable: ${mintable},
   deployed: ${gateway !== "0x0000000000000000000000000000000000000000"},

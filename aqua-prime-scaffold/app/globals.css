@@ -75,10 +75,6 @@ body {
   outline: 1px solid var(--term-cyan);
 }
 
-.blotter-row:nth-child(even) {
-  background: rgba(255, 255, 255, 0.02);
-}
-
 .term-value-loss {
   color: var(--term-red);
 }

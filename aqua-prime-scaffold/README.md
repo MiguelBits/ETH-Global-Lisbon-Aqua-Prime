@@ -48,7 +48,7 @@ cd aqua-prime-scaffold && yarn install && yarn sync-deployments && yarn dev
 
 | Path | Purpose |
 |------|---------|
-| `app/desk/page.tsx` | Terminal: ticket, routing, inventory, blotter |
+| `app/desk/page.tsx` | Terminal: ticket, routing, inventory, tape |
 | `contracts/deployedContracts.ts` | Generated from fork manifest |
 | `scripts/sync-deployments.mjs` | Reads `reference/swap-vm/deployments/aqua-prime-fork.json` |
 | `scaffold.config.ts` | Fork chain + RPC |

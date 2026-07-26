@@ -30,7 +30,7 @@ contract PrimeSelector is AquaOpcodesDebug {
     }
 
     /// @dev Winner index + post-trade skew of the most recent EXECUTED (non-static) route, exposed for the
-    ///      gateway's blotter event so settlement never has to re-simulate the branches. Transient: written
+    ///      gateway's SwapRouted event so settlement never has to re-simulate the branches. Transient: written
     ///      only on the swap path (never in the static quote path, keeping quote() a side-effect-free
     ///      staticcall) and auto-cleared at end of transaction.
     uint8 private transient _lastWinnerIndex;
@@ -69,7 +69,7 @@ contract PrimeSelector is AquaOpcodesDebug {
         uint8 winnerIndex;
         uint256 winnerPostSkew;
         (, winnerIndex, winnerPostSkew, updatedSwap) = _route(isStaticContext, query, swap, args, takerData, false);
-        // Persist the executed route for the gateway blotter. Skipped in the static (quote) path so quote()
+        // Persist the executed route for the gateway event. Skipped in the static (quote) path so quote()
         // performs no state writes and remains staticcall-safe; return values are identical in both paths.
         if (!isStaticContext) {
             _lastWinnerIndex = winnerIndex;

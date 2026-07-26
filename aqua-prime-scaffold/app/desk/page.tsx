@@ -34,7 +34,6 @@ import {
   type RawTuningParams,
 } from "~~/lib/primeSim";
 import type { JarvisProposal } from "~~/lib/jarvis/schema";
-import { fetchRecentSwaps } from "~~/lib/subgraph";
 import { useEthUsd } from "~~/lib/useEthUsd";
 import { useOnChainBranchBreakdown } from "~~/lib/useOnChainBranchBreakdown";
 import { approveWriteRequest, swapExactInWriteRequest } from "~~/lib/approveAndSwap";
@@ -126,12 +125,6 @@ export default function PrimeDeskPage() {
     query: { enabled: !!address && !isZeroGateway },
   });
 
-  const { data: subgraphSwaps = [] } = useQuery({
-    queryKey: ["marketStatsSwaps"],
-    queryFn: () => fetchRecentSwaps(24),
-    refetchInterval: 8000,
-  });
-
   const { data: uniRefData } = useQuery({
     queryKey: ["uniRef", amountInWei.toString(), sellBase],
     enabled: amountInWei > 0n,
@@ -156,7 +149,6 @@ export default function PrimeDeskPage() {
       refetchUsdc(),
       refetchAllowance(),
     ]);
-    await queryClient.invalidateQueries({ queryKey: ["marketStatsSwaps"] });
     await queryClient.invalidateQueries({ queryKey: ["tradeTape"] });
   }, [queryClient, refetchAllowance, refetchQuote, refetchUsdc, refetchVirtual, refetchWeth]);
 
@@ -183,8 +175,8 @@ export default function PrimeDeskPage() {
   const poolVsMarkBps = bpsVs(poolMidUsdcPerWeth, chainlinkUsdPerEth);
 
   const marketStats = useMemo(
-    () => computeMarketStats(subgraphSwaps, uniRefOut, sellBase ? amountInWei : parseUnits("1", 18)),
-    [subgraphSwaps, uniRefOut, sellBase, amountInWei],
+    () => computeMarketStats([], uniRefOut, sellBase ? amountInWei : parseUnits("1", 18)),
+    [uniRefOut, sellBase, amountInWei],
   );
 
   const resolvedTuning = useMemo(() => {
@@ -676,7 +668,7 @@ export default function PrimeDeskPage() {
                 <dd className="text-right font-mono">{(marketStats.flowImbalance * 100).toFixed(1)}%</dd>
                 <dt className="term-label">Oracle staleness</dt>
                 <dd className="text-right font-mono">{stalenessSec}s</dd>
-                <dt className="term-label">Subgraph samples</dt>
+                <dt className="term-label">Fill samples</dt>
                 <dd className="text-right font-mono">{marketStats.sampleCount}</dd>
               </dl>
             </div>
