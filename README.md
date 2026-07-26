@@ -79,11 +79,46 @@ The AI does not invent prices. It only turns bounded knobs. Caps live in the gat
 - Desk identity on `maker.primedesk.eth`.
 - Setup: [`docs/ENS_SETUP.md`](docs/ENS_SETUP.md).
 
-### Uniswap Foundation
+### Uniswap Foundation - Trade API as agent decision fuel
 
-- CLASSIC + BEST_PRICE quotes → TapeIntel (impact, route, gas, edge).
-- Jarvis retunes heal knobs from that tape; Aqua settles.
-- Feedback: [`aqua-prime-scaffold/FEEDBACK.md`](aqua-prime-scaffold/FEEDBACK.md).
+Uniswap is **not** the settlement venue. It is the **mainnet fair tape** Jarvis uses to retune heal knobs before Aqua/SwapVM settles on the fork (or Sepolia).
+
+**Endpoint.** Server-side only (key never hits the browser):
+
+```
+POST https://trade-api.gateway.uniswap.org/v1/quote
+Headers: x-api-key, x-universal-router-version: 2.0
+Body:    type=EXACT_INPUT, tokenIn/tokenOut = mainnet WETH <-> USDC
+```
+
+**Two quotes per ticket (parallel).** For the on-screen size and side we fetch:
+
+| Preference | Role |
+|------------|------|
+| `CLASSIC` | AMM / Universal Router fair reference. Desk edge bps is measured against this. |
+| `BEST_PRICE` | May include UniswapX fillers. Compared to CLASSIC to detect "filler fantasy". |
+
+**What we parse into `TapeIntel`.** [`tapeIntel.ts`](aqua-prime-scaffold/lib/jarvis/tapeIntel.ts) normalizes both response shapes (nested `quote.*` vs top-level; UniswapX `orderInfo.outputs` start/end amounts):
+
+| Field | How Jarvis / the UI uses it |
+|-------|-----------------------------|
+| `amountOut` (CLASSIC) | Fair reference; `edgeDeskVsClassicBps` |
+| `amountOut` (BEST_PRICE) | `bestVsClassicBps`; if gap is wide -> `fillerGapWide` (trust CLASSIC, cut premium) |
+| `priceImpact` | Thin-book signal -> cut `maxAdjustment` / `healK` |
+| `gasFeeUSD` | Prompt + tape strip |
+| `routeString`, fee tiers, hops | Route quality; multi-hop / high fee -> `thinLiquidity` |
+| UniswapX start/end | Auction softness (informational) |
+| `blockNumber` | Freshness stamped into the 0G prompt |
+
+**Where it shows up.**
+
+1. **Desk tape** - `/api/uniswap-quote` feeds the terminal reference mid (`TradeTapePanel`).
+2. **Jarvis consult** - `TapeIntel` is injected as `uniswapTape` into local heuristics ([`fallback.ts`](aqua-prime-scaffold/lib/jarvis/fallback.ts)) and the 0G prompt ([`prompt.ts`](aqua-prime-scaffold/lib/jarvis/prompt.ts)). Critique re-runs if desk edge vs CLASSIC is worse than -8 bps.
+3. **UI strip** - impact, route, edge, thin/filler flags on the Jarvis console.
+
+**Hard boundary.** We never call Uniswap `/swap`. Settlement is Aqua `dock`/`ship` + `swapExactIn`. Mainnet tape vs fork settlement is labeled in the UI.
+
+Hackathon feedback: [`aqua-prime-scaffold/FEEDBACK.md`](aqua-prime-scaffold/FEEDBACK.md). Spec: [`docs/UNISWAP_JARVIS.md`](docs/UNISWAP_JARVIS.md).
 
 ## Proof
 
@@ -114,7 +149,7 @@ bash scripts/dev-aqua-prime.sh
 
 Copy [`aqua-prime-scaffold/.env.example`](aqua-prime-scaffold/.env.example) → `.env.local`. Set `UNISWAP_API_KEY`, optional `ZEROG_API_KEY`, `NEXT_PUBLIC_WALLET_CONNECT_PROJECT_ID`, and an archive `MAINNET_RPC_URL` for the fork script.
 
-Demo notes: [`DEMO.md`](DEMO.md).
+Demo notes: [`DEMO.md`](DEMO.md). Uniswap tape spec: [`docs/UNISWAP_JARVIS.md`](docs/UNISWAP_JARVIS.md).
 
 ## Layout
 
@@ -122,7 +157,7 @@ Demo notes: [`DEMO.md`](DEMO.md).
 reference/swap-vm/       # SwapVM fork + SkewPricer, PrimeSelector, gateway, tests, deploy
 aqua-prime-scaffold/     # Next.js desk + Jarvis
 scripts/                 # one-command fork demo
-docs/                    # ENS setup + diagrams
+docs/                    # ENS setup + Uniswap tape spec
 DEMO.md
 ```
 
