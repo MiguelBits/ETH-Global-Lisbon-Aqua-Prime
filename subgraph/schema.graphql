@@ -1,0 +1,34 @@
+type Maker @entity {
+  id: ID!
+  address: Bytes!
+  ensName: String
+  strategies: [Strategy!]! @derivedFrom(field: "maker")
+  swaps: [Swap!]! @derivedFrom(field: "maker")
+}
+
+type Strategy @entity {
+  id: ID!
+  hash: Bytes!
+  maker: Maker!
+  baseToken: Bytes!
+  quoteToken: Bytes!
+  baseBal: BigInt!
+  quoteBal: BigInt!
+  shippedAt: BigInt!
+  txHash: Bytes!
+}
+
+type Swap @entity {
+  id: ID!
+  taker: Bytes!
+  maker: Maker!
+  sellBase: Boolean!
+  amountIn: BigInt!
+  amountOut: BigInt!
+  winnerIndex: Int!
+  postSkewE18: BigInt!
+  baseBalAfter: BigInt!
+  quoteBalAfter: BigInt!
+  timestamp: BigInt!
+  txHash: Bytes!
+}

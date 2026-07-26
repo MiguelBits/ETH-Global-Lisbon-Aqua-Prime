@@ -1,0 +1,32 @@
+[
+  {
+    "anonymous": false,
+    "inputs": [
+      { "indexed": true, "internalType": "address", "name": "maker", "type": "address" },
+      { "indexed": true, "internalType": "address", "name": "taker", "type": "address" },
+      { "indexed": false, "internalType": "bool", "name": "sellBase", "type": "bool" },
+      { "indexed": false, "internalType": "uint256", "name": "amountIn", "type": "uint256" },
+      { "indexed": false, "internalType": "uint256", "name": "amountOut", "type": "uint256" },
+      { "indexed": false, "internalType": "uint8", "name": "winnerIndex", "type": "uint8" },
+      { "indexed": false, "internalType": "uint256", "name": "postSkewE18", "type": "uint256" },
+      { "indexed": false, "internalType": "uint256", "name": "baseBalAfter", "type": "uint256" },
+      { "indexed": false, "internalType": "uint256", "name": "quoteBalAfter", "type": "uint256" }
+    ],
+    "name": "SwapRouted",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      { "indexed": true, "internalType": "address", "name": "maker", "type": "address" },
+      { "indexed": true, "internalType": "bytes32", "name": "strategyHash", "type": "bytes32" },
+      { "indexed": true, "internalType": "address", "name": "baseToken", "type": "address" },
+      { "indexed": false, "internalType": "address", "name": "quoteToken", "type": "address" },
+      { "indexed": false, "internalType": "uint256", "name": "baseBal", "type": "uint256" },
+      { "indexed": false, "internalType": "uint256", "name": "quoteBal", "type": "uint256" },
+      { "indexed": false, "internalType": "string", "name": "ensName", "type": "string" }
+    ],
+    "name": "DeskShipped",
+    "type": "event"
+  }
+]
